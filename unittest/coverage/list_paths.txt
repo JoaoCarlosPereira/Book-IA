@@ -1,0 +1,4 @@
+C:\dsv-git\dsv-delphi\sysmos1-modular\Fiscal\shared
+C:\dsv-git\dsv-delphi\sysmos1-modular\Fiscal\DRCST\src\pas
+C:\dsv-git\dsv-delphi\shared\Fiscal\DRCST
+C:\dsv-git\dsv-delphi\shared\Fiscal
