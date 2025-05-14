@@ -42,7 +42,13 @@ uses
   Leitor.IA.Request in '..\..\src\pas\Leitor.IA.Request.pas',
   Leitor.IA.Response in '..\..\src\pas\Leitor.IA.Response.pas',
   Rgn.Leitor.IA.Http in '..\..\src\pas\Rgn.Leitor.IA.Http.pas',
-  Rgn.Sistema.WebService.Rest in 'D:\dsv-git\dsv-delphi\shared\Sistema\WebService\Rgn.Sistema.WebService.Rest.pas';
+  Rgn.Leitor.IA in '..\..\src\pas\Rgn.Leitor.IA.pas',
+  Rgn.Sistema.ThreadUtils in '..\..\src\Shared\Sistema\Rgn.Sistema.ThreadUtils.pas',
+  Rgn.Sistema.WebService.Rest in '..\..\src\Shared\Sistema\Rgn.Sistema.WebService.Rest.pas',
+  Rgn.Sistema.ThreadFactory in '..\..\src\Shared\Sistema\Rgn.Sistema.ThreadFactory.pas',
+  Rgn.Leitor.Book in '..\..\src\pas\Book\Rgn.Leitor.Book.pas',
+  Leitor.Book in '..\..\src\pas\Book\Leitor.Book.pas',
+  Rgn.Leitor.PDF in '..\..\src\pas\PDF\Rgn.Leitor.PDF.pas';
 
 {$R *.RES}
 

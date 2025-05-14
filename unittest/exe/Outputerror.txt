@@ -1,0 +1,2 @@
+
+winhttp.dll error 12002 (The operation timed out)|EWinHTTP|

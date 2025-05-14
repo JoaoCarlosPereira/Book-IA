@@ -15,12 +15,13 @@ type
     procedure TearDown; override;
   published
     procedure TestConexaoComIA;
+    procedure TestExtrairPersonagens;
   end;
 
 implementation
 
 uses
-  System.SysUtils, Leitor.IA.Response;
+  System.SysUtils, Leitor.IA.Response, Rgn.Leitor.Book;
 
 
 
@@ -49,6 +50,16 @@ begin
   oRespostaIA := oIRgnLeitorIAHttp.Generate(oRequestIA);
 
   CheckTrue(oRespostaIA.Response.ToLower.Contains('sim'), 'IA Fora do ar.');
+end;
+
+
+
+procedure TestRgnLeitorIAHttp.TestExtrairPersonagens;
+var
+  oRgnLeitorBook: IRgnLeitorBook;
+begin
+  oRgnLeitorBook := TRgnLeitorBook.Create;
+  oRgnLeitorBook.ProcessarBook('D:\dsv-git\dsv-delphi\Book-IA\unittest\input\Harry Potter e a Ordem da Fenix.pdf');
 end;
 
 initialization

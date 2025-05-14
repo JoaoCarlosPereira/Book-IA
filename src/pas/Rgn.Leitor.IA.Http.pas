@@ -18,13 +18,14 @@ type
   public
     function Generate(const ARequestIA: TRequestIA): TResponse;
     constructor Create;
+    function Ref: IRgnLeitorIAHttp;
   end;
 
 const
   URL_API = 'https://joaocarlosdev.duckdns.org';
   METODO_API = 'ollama/api/generate';
   PORTA_PADRAO = 443;
-  BOLETO_TIMEOUT = 120000;
+  REQUEST_TIMEOUT = 900000;
   TIPO_ENVIO_RETORNO = 'application/json';
   API_KEY = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImJmNTU0NjFlLThlM2QtNGYxNS1hYmY5LWM1OTNlODRiNzY2OSJ9.m-iD7Y6ceGG7xfL2FqvI77UYkDtU356B5_xkw-gSWYg';
 
@@ -47,7 +48,7 @@ begin
     EmptyStr,
     EmptyStr,
     exAtualizacaoTributaria,
-    BOLETO_TIMEOUT,
+    REQUEST_TIMEOUT,
     EmptyStr,
     'application/x-www-form-urlencoded',
     TIPO_ENVIO_RETORNO,
@@ -64,6 +65,13 @@ function TRgnLeitorIAHttp.Generate(const ARequestIA: TRequestIA): TResponse;
 begin
   Result := TResponse.Create;
   oIWebService.Post(METODO_API, ARequestIA.ToJson, Result, TResponse);
+end;
+
+
+
+function TRgnLeitorIAHttp.Ref: IRgnLeitorIAHttp;
+begin
+  Result := Self;
 end;
 
 end.
