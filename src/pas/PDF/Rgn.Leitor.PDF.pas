@@ -50,60 +50,34 @@ end;
 
 function TRgnLeitorPDF.LerPDFPorPagina(const ACaminhoPDF: string): TStringList;
 var
-  sPastaTemporaria, sNomeBase, sArquivoPagina, sTextoPagina: string;
-  oPaginas: TStringList;
-  iContador, iCasas: Integer;
+  OutputPath, Cmd, TempText: string;
+  SL: TStringList;
+  PythonPath: string;
+  ProcHandle: THandle;
 begin
-  Result := TStringList.Create;
-  try
-    sPastaTemporaria := IncludeTrailingPathDelimiter(GetEnvironmentVariable('TEMP') + '\pdfsplit_' + FormatDateTime('dd_mm_yyyy_hh_nn_ss_zzz', Now) + '_' + GetNumeroRandomico);
-    ForceDirectories(sPastaTemporaria);
+  Cmd        := Format('%s %s %s', ['C:\Users\s293\AppData\Local\Programs\Python\Python313\python.exe', 'extrair_pdf.py', ACaminhoPDF]);
+  ProcHandle := WinExec(PAnsiChar(AnsiString(Cmd)), SW_HIDE);
+  OutputPath := ACaminhoPDF.Replace('.pdf', '.txt');
 
-    // Passo 1 - Dividir o PDF por páginas
-    if (not(ExecutarComando('C:\Program Files\qpdf\bin\qpdf.exe', Format('--split-pages "%s" "%spag_%%d.pdf"', [ACaminhoPDF, sPastaTemporaria])))) then
-      raise Exception.Create('Erro ao dividir PDF com QPDF.');
-
-    // Passo 2 - Ler os arquivos gerados e extrair texto
-    iContador := 1;
-    iCasas    := 2;
-    while True do
-    begin
-      sArquivoPagina := Format('%spag_%s.pdf', [sPastaTemporaria, Format('%.' + iCasas.ToString + 'd', [iContador])]);
-      if (not(FileExists(sArquivoPagina))) then
-      begin
-        if (iCasas <= 5) then
-        begin
-          Inc(iCasas);
-          Continue
-        end
-        else
-          Break;
-      end;
-
-      sTextoPagina := sArquivoPagina.Replace('.pdf', '.txt');
-
-      if (not(ExecutarComando('pdftotext.exe', Format('"%s" "%s"', [sArquivoPagina, sTextoPagina])))) then
-        raise Exception.CreateFmt('Erro ao extrair texto da página %d.', [iContador]);
-
-      if (FileExists(sTextoPagina)) then
-      begin
-        oPaginas := TStringList.Create;
-        try
-          oPaginas.LoadFromFile(sTextoPagina, TEncoding.UTF8);
-          Result.Add(oPaginas.Text.Trim);
-        finally
-          oPaginas.Free;
-        end;
-      end;
-
-      Inc(iContador);
-    end;
-  finally
-    TDirectory.Delete(sPastaTemporaria, True); // descomente se quiser remover os arquivos
+  while (not FileExists(OutputPath)) do
+  begin
+    Sleep(1000);
   end;
 
-  // Limpeza opcional dos arquivos temporários
+  if not FileExists(OutputPath) then
+    raise Exception.Create('Falha ao gerar o arquivo de saída .txt');
 
+  // 5. Carregar o texto dividido por páginas
+  SL     := TStringList.Create;
+  Result := TStringList.Create;
+  try
+    SL.LoadFromFile(OutputPath, TEncoding.UTF8);
+    TempText    := StringReplace(SL.Text, sLineBreak, ' ', [rfReplaceAll]);;
+    Result.Text := StringReplace(TempText, '===PAGINA===', #13#10, [rfReplaceAll]);
+  finally
+    SL.Free;
+    TFile.Delete(OutputPath);
+  end;
 end;
 
 end.

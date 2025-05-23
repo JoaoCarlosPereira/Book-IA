@@ -44,12 +44,12 @@ procedure TestRgnLeitorIAHttp.TestConexaoComIA;
 var
   oRespostaIA: TResponse;
 begin
-  oRequestIA.model  := 'gemma3:27b';
-  oRequestIA.prompt := 'IA está na escuta?';
+  oRequestIA.model  := 'deepseek-r1:32b';
+  oRequestIA.prompt := 'IA Você está me ouvindo?, responda apenas sim ou não';
 
   oRespostaIA := oIRgnLeitorIAHttp.Generate(oRequestIA);
 
-  CheckTrue(oRespostaIA.Response.ToLower.Contains('sim'), 'IA Fora do ar.');
+  CheckTrue(oRespostaIA.Response.ToLower.Contains('sim'), 'IA offline');
 end;
 
 
@@ -59,7 +59,7 @@ var
   oRgnLeitorBook: IRgnLeitorBook;
 begin
   oRgnLeitorBook := TRgnLeitorBook.Create;
-  oRgnLeitorBook.ProcessarBook('D:\dsv-git\dsv-delphi\Book-IA\unittest\input\Harry Potter e a Ordem da Fenix.pdf');
+  oRgnLeitorBook.ProcessarBook('D:\dsv-git\dsv-delphi\Book-IA\unittest\input\Carmilla.pdf');
 end;
 
 initialization

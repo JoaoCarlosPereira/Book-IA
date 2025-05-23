@@ -10,6 +10,7 @@ type
   IRgnLeitorIAHttp = interface
     ['{A912C374-4F2E-4307-8215-8FB53D407551}']
     function Generate(const ARequestIA: TRequestIA): TResponse;
+    procedure DescarregarModelo;
   end;
 
   TRgnLeitorIAHttp = class(TInterfacedPersistent, IRgnLeitorIAHttp)
@@ -17,14 +18,15 @@ type
     oIWebService: IRgnSistemaWebServiceRest;
   public
     function Generate(const ARequestIA: TRequestIA): TResponse;
+    procedure DescarregarModelo;
     constructor Create;
     function Ref: IRgnLeitorIAHttp;
   end;
 
 const
-  URL_API = 'https://joaocarlosdev.duckdns.org';
-  METODO_API = 'ollama/api/generate';
-  PORTA_PADRAO = 443;
+  URL_API = 'http://192.168.2.162';
+  METODO_API = 'api/generate';
+  PORTA_PADRAO = 11434;
   REQUEST_TIMEOUT = 900000;
   TIPO_ENVIO_RETORNO = 'application/json';
   API_KEY = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImJmNTU0NjFlLThlM2QtNGYxNS1hYmY5LWM1OTNlODRiNzY2OSJ9.m-iD7Y6ceGG7xfL2FqvI77UYkDtU356B5_xkw-gSWYg';
@@ -32,7 +34,8 @@ const
 implementation
 
 uses
-  Lib.RC.RestClient.Exception.Factory, Lib.Serialize.Enumerator;
+  Lib.RC.RestClient.Exception.Factory, Lib.Serialize.Enumerator,
+  Lib.RC.RestClient.HTTPClient.Enumerator;
 
 { TRgnLeitorIAHttp }
 
@@ -40,7 +43,7 @@ uses
 
 constructor TRgnLeitorIAHttp.Create;
 begin
-  oIWebService := TRgnSistemaWebServiceRest.Create.Ref;
+  oIWebService := TRgnSistemaWebServiceRest.Create(ctUseWinHTTP).Ref;
   oIWebService.InicializarConexao(
     URL_API,
     PORTA_PADRAO,
@@ -65,6 +68,16 @@ function TRgnLeitorIAHttp.Generate(const ARequestIA: TRequestIA): TResponse;
 begin
   Result := TResponse.Create;
   oIWebService.Post(METODO_API, ARequestIA.ToJson, Result, TResponse);
+end;
+
+
+
+procedure TRgnLeitorIAHttp.DescarregarModelo;
+var
+  oResponse: TResponse;
+begin
+  oResponse := TResponse.Create;
+  oIWebService.Post(METODO_API, '{"model": "gemma3:27b-it-qat", "keep_alive": 0}', oResponse, TResponse);
 end;
 
 

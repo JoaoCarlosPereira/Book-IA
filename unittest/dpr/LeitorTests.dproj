@@ -102,7 +102,6 @@
         <DCCReference Include="..\pas\TestRgn.Leitor.IA.Http.pas"/>
         <DCCReference Include="..\..\src\pas\Leitor.IA.Request.pas"/>
         <DCCReference Include="..\..\src\pas\Leitor.IA.Response.pas"/>
-        <DCCReference Include="..\..\src\pas\Rgn.Leitor.IA.Http.pas"/>
         <DCCReference Include="..\..\src\pas\Rgn.Leitor.IA.pas"/>
         <DCCReference Include="..\..\src\Shared\Sistema\Rgn.Sistema.ThreadUtils.pas"/>
         <DCCReference Include="..\..\src\Shared\Sistema\Rgn.Sistema.WebService.Rest.pas"/>
@@ -110,6 +109,9 @@
         <DCCReference Include="..\..\src\pas\Book\Rgn.Leitor.Book.pas"/>
         <DCCReference Include="..\..\src\pas\Book\Leitor.Book.pas"/>
         <DCCReference Include="..\..\src\pas\PDF\Rgn.Leitor.PDF.pas"/>
+        <DCCReference Include="..\..\src\pas\Rgn.Leitor.IA.Http.pas"/>
+        <DCCReference Include="..\..\src\pas\Book\Personagens\Rgn.Leitor.Book.Personagens.pas"/>
+        <DCCReference Include="..\..\src\pas\Book\Narrador\Rgn.Leitor.Book.Narrador.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>

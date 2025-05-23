@@ -41,14 +41,16 @@ uses
   TestRgn.Leitor.IA.Http in '..\pas\TestRgn.Leitor.IA.Http.pas',
   Leitor.IA.Request in '..\..\src\pas\Leitor.IA.Request.pas',
   Leitor.IA.Response in '..\..\src\pas\Leitor.IA.Response.pas',
-  Rgn.Leitor.IA.Http in '..\..\src\pas\Rgn.Leitor.IA.Http.pas',
   Rgn.Leitor.IA in '..\..\src\pas\Rgn.Leitor.IA.pas',
   Rgn.Sistema.ThreadUtils in '..\..\src\Shared\Sistema\Rgn.Sistema.ThreadUtils.pas',
   Rgn.Sistema.WebService.Rest in '..\..\src\Shared\Sistema\Rgn.Sistema.WebService.Rest.pas',
   Rgn.Sistema.ThreadFactory in '..\..\src\Shared\Sistema\Rgn.Sistema.ThreadFactory.pas',
   Rgn.Leitor.Book in '..\..\src\pas\Book\Rgn.Leitor.Book.pas',
   Leitor.Book in '..\..\src\pas\Book\Leitor.Book.pas',
-  Rgn.Leitor.PDF in '..\..\src\pas\PDF\Rgn.Leitor.PDF.pas';
+  Rgn.Leitor.PDF in '..\..\src\pas\PDF\Rgn.Leitor.PDF.pas',
+  Rgn.Leitor.IA.Http in '..\..\src\pas\Rgn.Leitor.IA.Http.pas',
+  Rgn.Leitor.Book.Personagens in '..\..\src\pas\Book\Personagens\Rgn.Leitor.Book.Personagens.pas',
+  Rgn.Leitor.Book.Narrador in '..\..\src\pas\Book\Narrador\Rgn.Leitor.Book.Narrador.pas';
 
 {$R *.RES}
 
