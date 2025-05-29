@@ -777,6 +777,13 @@ function TRgnSistemaWebServiceRest.Post(const AAction: RawUTF8; const ARequestDt
     try
       Status := Self.request(methodPost, AAction, StringToUTF8(ARequestDto), AAditionalHeaders, sResponse);
 
+//      if(UTF8ToString(sResponse).Contains('RESOURCE_EXHAUSTED')) or (UTF8ToString(sResponse).Contains('timed out')) then
+//      begin
+//        Sleep(60000);
+//        DoPost(ARequestDto, AResponseDto, AAditionalHeaders,Result, AAction);
+//        Exit;
+//      end;
+
       if (sResponse <> '') then
         TSerializeFactory.GetInstance(Self.SerializeType).Unserialize(sResponse, AResponseDto, TObject(AResponseDto).ClassType);
 

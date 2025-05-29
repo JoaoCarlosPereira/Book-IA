@@ -50,7 +50,12 @@ uses
   Rgn.Leitor.PDF in '..\..\src\pas\PDF\Rgn.Leitor.PDF.pas',
   Rgn.Leitor.IA.Http in '..\..\src\pas\Rgn.Leitor.IA.Http.pas',
   Rgn.Leitor.Book.Personagens in '..\..\src\pas\Book\Personagens\Rgn.Leitor.Book.Personagens.pas',
-  Rgn.Leitor.Book.Narrador in '..\..\src\pas\Book\Narrador\Rgn.Leitor.Book.Narrador.pas';
+  Rgn.Leitor.Book.Narrador in '..\..\src\pas\Book\Narrador\Rgn.Leitor.Book.Narrador.pas',
+  Rgn.Leitor.Book.Abstract in '..\..\src\pas\Book\Rgn.Leitor.Book.Abstract.pas',
+  DAO.Leitor.Book in '..\..\src\pas\Book\DAO.Leitor.Book.pas',
+  Padrao.DAO in '..\..\..\shared\Padrao\DAO\Padrao.DAO.pas',
+  Sistema.Retorno in '..\..\..\shared\shared\Sistema\Sistema.Retorno.pas',
+  I.Sistema.Retorno in '..\..\..\shared\shared\Sistema\I.Sistema.Retorno.pas';
 
 {$R *.RES}
 

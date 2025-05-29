@@ -112,6 +112,11 @@
         <DCCReference Include="..\..\src\pas\Rgn.Leitor.IA.Http.pas"/>
         <DCCReference Include="..\..\src\pas\Book\Personagens\Rgn.Leitor.Book.Personagens.pas"/>
         <DCCReference Include="..\..\src\pas\Book\Narrador\Rgn.Leitor.Book.Narrador.pas"/>
+        <DCCReference Include="..\..\src\pas\Book\Rgn.Leitor.Book.Abstract.pas"/>
+        <DCCReference Include="..\..\src\pas\Book\DAO.Leitor.Book.pas"/>
+        <DCCReference Include="..\..\..\shared\Padrao\DAO\Padrao.DAO.pas"/>
+        <DCCReference Include="..\..\..\shared\shared\Sistema\Sistema.Retorno.pas"/>
+        <DCCReference Include="..\..\..\shared\shared\Sistema\I.Sistema.Retorno.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>

@@ -19,7 +19,8 @@ type
 implementation
 
 uses
-  Winapi.ShellAPI, Winapi.Windows, System.IOUtils, Helper.HNumeric;
+  Winapi.ShellAPI, Winapi.Windows, System.IOUtils, Helper.HNumeric,
+  Rgn.Leitor.IA.Http;
 
 
 
@@ -52,17 +53,66 @@ function TRgnLeitorPDF.LerPDFPorPagina(const ACaminhoPDF: string): TStringList;
 var
   OutputPath, Cmd, TempText: string;
   SL: TStringList;
-  PythonPath: string;
-  ProcHandle: THandle;
+
+  procedure CortarTextoPorTokens(const Texto: string; MaxTokens: Integer);
+  var
+    Sentencas: TArray<string>;
+    Sentenca, BlocoAtual, sSentencaManipucao: string;
+    TokenCount, TotalTokens: Integer;
+    Palavras: TArray<string>;
+  begin
+    // Corta apenas por pontos finais (não por ! ou ?)
+    Sentencas   := Texto.Split(['.'], TStringSplitOptions.ExcludeEmpty);
+    BlocoAtual  := '';
+    TotalTokens := 0;
+
+    for Sentenca in Sentencas do
+    begin
+      sSentencaManipucao := Sentenca.Trim;
+      if sSentencaManipucao.Trim = '' then
+        Continue;
+
+      sSentencaManipucao := sSentencaManipucao + '.'; // reanexa o ponto final
+
+      Palavras   := sSentencaManipucao.Split([' '], TStringSplitOptions.ExcludeEmpty);
+      TokenCount := Length(Palavras);
+
+      if TotalTokens + TokenCount > MaxTokens then
+      begin
+        Result.Add(Trim(BlocoAtual));
+        BlocoAtual  := sSentencaManipucao + ' ';
+        TotalTokens := TokenCount;
+      end
+      else
+      begin
+        BlocoAtual := BlocoAtual + sSentencaManipucao + ' ';
+        Inc(TotalTokens, TokenCount);
+      end;
+    end;
+
+    if BlocoAtual.Trim <> '' then
+      Result.Add(Trim(BlocoAtual));
+  end;
+
+
+
 begin
-  Cmd        := Format('%s %s %s', ['C:\Users\s293\AppData\Local\Programs\Python\Python313\python.exe', 'extrair_pdf.py', ACaminhoPDF]);
-  ProcHandle := WinExec(PAnsiChar(AnsiString(Cmd)), SW_HIDE);
-  OutputPath := ACaminhoPDF.Replace('.pdf', '.txt');
+  OutputPath := ACaminhoPDF.Replace(ExtractFileName(ACaminhoPDF), ExtractFileName(ACaminhoPDF).Replace(' ', '_'));
+  RenameFile(ACaminhoPDF, OutputPath);
+
+  if (DirectoryExists('C:\Users\s293\AppData\Local\Programs\Python\Python313')) then
+    Cmd := Format('%s %s %s', ['C:\Users\s293\AppData\Local\Programs\Python\Python313\python.exe', 'extrair_pdf.py', OutputPath])
+  else
+    Cmd := Format('%s %s %s', ['C:\Users\Windows\AppData\Local\Programs\Python\Python313\python.exe', 'extrair_pdf.py', OutputPath]);
+  WinExec(PAnsiChar(AnsiString(Cmd)), SW_HIDE);
+  OutputPath := OutputPath.Replace('.pdf', '.txt');
 
   while (not FileExists(OutputPath)) do
   begin
-    Sleep(1000);
+    Sleep(UM_SEGUNDO);
   end;
+
+  Sleep(UM_MINUTO);
 
   if not FileExists(OutputPath) then
     raise Exception.Create('Falha ao gerar o arquivo de saída .txt');
@@ -76,7 +126,6 @@ begin
     Result.Text := StringReplace(TempText, '===PAGINA===', #13#10, [rfReplaceAll]);
   finally
     SL.Free;
-    TFile.Delete(OutputPath);
   end;
 end;
 

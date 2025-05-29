@@ -5,7 +5,7 @@ interface
 uses
   System.SysUtils,
   System.Classes,
-  System.Generics.Collections, RecordHelper.HArray;
+  System.Generics.Collections, RecordHelper.HArray,  Helper.HBoolean;
 
 type
   TPersonagemFala = class
@@ -15,7 +15,10 @@ type
     FIdadeAparente: string;
     FFala: string;
   public
-    Posicao: Integer;
+    sequencial: Int64;
+    Voz: Integer;
+    processado: Boolean;
+    auxiliar: string;
     property nome: string read FNome write FNome;
     property genero: string read FGenero write FGenero;
     property idade_aparente: string read FIdadeAparente write FIdadeAparente;
@@ -26,22 +29,35 @@ type
   public
     function ToJson: String;
     function GetPersonagens: String;
+    function GetTrechoPorPersonagem(const APersonagem: string): String;
     procedure RemoverDuplicados;
   end;
 
   TPagina = class
   public
+    sequencial: Int64;
     Texto: string;
     ListaPersonagens: TListaPersonagensFalas;
+    Prompt: String;
+    Processado: Boolean;
+    Response: String;
+    Numero: Integer;
     constructor Create;
     destructor Destroy; override;
   end;
 
   TLivro = class(TObjectList<TPagina>)
   public
+    sequencial: Int64;
+    nome: string;
+    lido: Boolean;
+    normalizado: Boolean;
+    narradorObtido: Boolean;
+    produzido: Boolean;
     function GetTrechoPorPersonagem(const APersonagem: string): String;
     function GetPersonagem(const ANome: string): TArray<TPersonagemFala>;
     function GetPersonagens: TArrayString;
+    function HaPaginasPendentes: Boolean;
   end;
 
 implementation
@@ -55,6 +71,8 @@ uses
 constructor TPagina.Create;
 begin
   ListaPersonagens := TListaPersonagensFalas.Create;
+  Processado       := False;
+  Prompt           := '';
 end;
 
 
@@ -78,8 +96,28 @@ begin
   for iIndice := 0 to Pred(Self.Count) do
   begin
     oPersonagem := Self[iIndice];
-    Result      := Result + iIndice.ToString + '|' + oPersonagem.nome + ' \n ';
+    Result      := Result + iIndice.ToString + '|' + oPersonagem.nome + '|' + GetTrechoPorPersonagem(oPersonagem.nome) + ' \n ';
   end;
+end;
+
+
+
+function TListaPersonagensFalas.GetTrechoPorPersonagem(const APersonagem: string): String;
+var
+  oPersonagem: TPersonagemFala;
+begin
+  Result := '';
+  for oPersonagem in Self do
+  begin
+    if (oPersonagem.nome = APersonagem) then
+    begin
+      Result := Result + oPersonagem.fala + ' ';
+    end;
+
+    if (Result.Replace(' ', '').Length >= 1000) then
+      Break;
+  end;
+
 end;
 
 
@@ -193,12 +231,28 @@ begin
     begin
       if (oPersonagem.nome = APersonagem) then
       begin
-        Result := Result + oPersonagem.fala + ' \n ';
+        Result := Result + oPersonagem.fala + ' ';
       end;
     end;
 
-    if (Result.Replace(' ', '').Length >= 1500) then
+    if (Result.Replace(' ', '').Length >= 800) then
       Break;
+  end;
+end;
+
+
+
+function TLivro.HaPaginasPendentes: Boolean;
+var
+  oPagina: TPagina;
+begin
+  Result := False;
+  for oPagina in Self do
+  begin
+    if (not(oPagina.Processado)) and (not(oPagina.Response.Contains('no characters'))) then
+    begin
+      Exit(True);
+    end;
   end;
 end;
 

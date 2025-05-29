@@ -4,7 +4,7 @@ interface
 
 uses
   System.Generics.Collections, System.SysUtils, System.Classes, OtlTask,
-  Leitor.Book, Rgn.Leitor.IA.Http;
+  Leitor.Book, Rgn.Leitor.IA.Http, System.SyncObjs, Rgn.Leitor.Book.Abstract;
 
 type
   IRgnLeitorBookPersonagens = interface
@@ -12,11 +12,11 @@ type
     procedure ObterPersonagens(const ALivro: TLivro);
   end;
 
-  TRgnLeitorBookPersonagens = class(TInterfacedPersistent, IRgnLeitorBookPersonagens)
+  TRgnLeitorBookPersonagens = class(TRgnLeitorBookAbstract, IRgnLeitorBookPersonagens)
   private
-    oIRgnLeitorIAHttp: IRgnLeitorIAHttp;
     procedure NormalizarNomes(const ALivro: TLivro);
-    procedure DefinirPerfilPersonagem(const ALivro: TLivro);
+    procedure ExtrairPersonagem(const ALivro: TLivro);
+    procedure Imprimir(const ATexto: string);
   public
     procedure ObterPersonagens(const ALivro: TLivro);
   end;
@@ -25,163 +25,112 @@ implementation
 
 uses
   Rgn.Sistema.ThreadFactory, System.Types, System.IOUtils, Leitor.IA.Response,
-  Leitor.IA.Request, Helper.HNumeric;
+  Leitor.IA.Request, Helper.HNumeric, StrUtils, System.DateUtils,
+  DAO.Leitor.Book;
 
 
 
 procedure TRgnLeitorBookPersonagens.ObterPersonagens(const ALivro: TLivro);
-var
-  oPagina: TPagina;
-  oPersonagem: TPersonagemFala;
-  iTentativas: Integer;
-  iRequisicoes: Integer;
-  dTime: TTime;
-  oRequestIA: TRequestIA;
-  oResponse: TResponse;
-  oPersonagens: TStringList;
-
-  function GetPrompt: string;
+begin
+  while ALivro.HaPaginasPendentes do
   begin
-    Result :=
-      '[INSTRUÇÃO DE SISTEMA]\n' +
-      'Você é um classificador de personagens de livros de ficção. Sua tarefa é extrair apenas os personagens que falam na narrativa de um trecho de livro fornecido.\n' +
-      '\n' +
-      '[SUA FUNÇÃO]\n' +
-      'Identifique os personagens que têm **fala direta**, ou seja, frases que começam com **travessão no início da linha** (—, –), ou estão entre aspas (""). Para cada personagem com fala identificada, extraia:\n' +
-      '# REGRAS PARA IDENTIFICAÇÃO DE FALAS EM TEXTOS NARRATIVOS (PORTUGUÊS)\n' +
-      '\n' +
-      '## 1. SINAIS GRÁFICOS\n' +
-      '- Se o texto estiver ENTRE ASPAS (“ ” ou '''' '''') → É uma fala.\n' +
-      '  Exemplo: "Ele disse: '''' Vamos agora.''''"\n' +
-      '- Se começar com TRAVESSÃO (— ou -) → É uma fala.\n' +
-      '  Exemplo: — Onde você estava?\n' +
-      '\n' +
-      '## 2. VERBOS DECLARATIVOS (PALAVRAS-CHAVE)\n' +
-      '- Verbos comuns que introduzem falas:\n' +
-      '  dizer, falar, perguntar, responder, gritar, sussurrar, exclamar, murmurar, ordenar, comentar, declarar, indagar, replicar, retrucar, berrar, chorar, gemer, balbuciar, afirmar, garantir, sugerir, pedir, avisar.\n' +
-      '- Padrão típico:\n' +
-      '  "[Verbo declarativo] + '''': '''' + Aspas"\n' +
-      '  Exemplo: "Ele gritou: '''' Cuidado ! ''''"\n' +
-      '\n' +
-      '## 3. PONTUAÇÃO EXPRESSIVA\n' +
-      '- Se contém !, ? ou … (reticências) dentro de aspas/travessão → Provavelmente é fala.\n' +
-      '  Exemplo: "Você está louco?"\n' +
-      '\n' +
-      '## 4. ESTRUTURA DE DIÁLOGO\n' +
-      '- Mudança de linha + travessão/aspas → Novo personagem falando.\n' +
-      '  Exemplo:\n' +
-      '  — Você vai?\n' +
-      '  — Não, estou cansado.\n' +
-      '\n' +
-      '## 5. CONTEXTOS QUE NÃO SÃO FALAS\n' +
-      '- Se o texto entre aspas é uma citação (sem verbo declarativo):\n' +
-      '  Exemplo: A placa dizia "Pare". → Não é diálogo.\n' +
-      '- Pensamentos (geralmente em itálico ou com verbos como "pensar"):\n' +
-      '  Exemplo: *Será que ela vem?, ele pensou.* → Não é fala.\n' +
-      '\n' +
-      '## 6. REGRAS ADICIONAIS PARA EVITAR FALSOS POSITIVOS\n' +
-      '- Se o texto entre aspas é um título, nome de obra ou expressão idiomática → Ignorar.\n' +
-      '  Exemplo: Ele leu "Dom Casmurro".\n' +
-      '- Se o verbo declarativo está no passado indireto (sem aspas):\n' +
-      '  Exemplo: Ele disse que iria embora. → Não é fala direta.\n' +
-      '\n' +
-      '## EXEMPLOS PRÁTICOS PARA TREINAMENTO\n' +
-      '1. Fala detectada:\n' +
-      '   Maria suspirou: "Estou exausta."\n' +
-      '   → (Possui verbo declarativo + aspas)\n' +
-      '\n' +
-      '2. Não é fala:\n' +
-      '   O livro "1984" é famoso.\n' +
-      '   → (Aspas sem verbo declarativo)\n' +
-      '\n' +
-      '3. Diálogo com travessão:\n' +
-      '   — Que horas são? — perguntou João.\n' +
-      '   → (Travessão + verbo declarativo)\n' +
-      '\n' +
-      '1. Nome (mesmo que genérico, como "Pai", "Menina", "Homem")\n' +
-      '2. Fala (fala do personagem no trecho, fiel ao texto fornecido)\n' +
-      '\n' +
-      '[REGRAS IMPORTANTES]\n' +
-      '- Cada linha de fala no texto original deve gerar uma nova linha de saída.\n' +
-      '- Mesmo que o mesmo personagem fale duas vezes, cada fala deve ser separada.\n' +
-      '- Quando a fala for interrompida por narração, cada parte da fala deve ser extraída separadamente.\n' +
-      '- Se houver narração entre partes de uma fala (por exemplo: “— Não sei — disse ela. — Aqui em casa não está.”), trate como duas falas distintas, mas do mesmo personagem.\n' +
-      '- NUNCA junte falas diferentes em uma única linha de saída.\n' +
-      '- Preserve a ordem das falas exatamente como aparecem no texto.\n' +
-      '- NÃO inclua personagens que NÃO falam diretamente.\n' +
-      '- NÃO invente nomes nem falas. Use apenas o que está explicitamente no texto.\n' +
-      '- Ignore números de página, títulos, notas, prefácios, sumário, etc.\n' +
-      '\n' +
-      '[FORMATO DE SAÍDA]\n' +
-      'Retorne apenas os dados, um personagem por linha, seguindo este formato exato (sem ponto final):\n' +
-      '\n' +
-      'Nome|fala\n' +
-      '\n' +
-      'Se não houver nenhum personagem com fala direta no trecho, retorne apenas:\n' +
-      '\n' +
-      'sem personagens\n' +
-      '\n' +
-      '[EXEMPLOS DE SAÍDA CORRETA]\n' +
-      'João|Meu pastel é mais barato!\n' +
-      'Menina|Mentira garato.\n' +
-      'Vó|Não briguem crianças\n' +
-      '\n' +
-      '[EXEMPLO DE NARRAÇÃO INTERCALADA CORRETAMENTE TRATADA]\n' +
-      'Texto:\n' +
-      '— Onde está ele? — perguntou João, olhando em volta. — Ninguém viu?\n' +
-      '\n' +
-      'Deve retornar:\n' +
-      'João|Onde está ele?\n' +
-      'João|Ninguém viu?\n' +
-      '\n' +
-      '[TEXTO A SER ANALISADO]\n' +
-      '"' + oPagina.Texto + '"';
+    ExtrairPersonagem(ALivro);
   end;
+
+  if (not(ALivro.normalizado)) then
+  begin
+    Imprimir('Normalizando nomes de personagens...');
+    ALivro.Clear;
+    oIDAOLeitorBook.LocalizarPaginas(ALivro);
+    NormalizarNomes(ALivro);
+  end;
+end;
+
+
+
+procedure TRgnLeitorBookPersonagens.Imprimir(const ATexto: string);
+begin
+  Writeln(ATexto);
+end;
+
+
+
+procedure TRgnLeitorBookPersonagens.ExtrairPersonagem(const ALivro: TLivro);
+var
+  iNumeroPagina: Integer;
+  oPagina: TPagina;
+  oRequestIA: TRequestIA;
+  oPersonagens: TStringList;
+  oIRgnLeitorIAHttp: IRgnLeitorIAHttp;
+
+const
+  PROMPT = 'Extract direct speech and narration from the Portuguese text.\n' +
+    'Output each line in the format:\n' +
+    'name|speech\n' +
+    'narrator|narration\n\n' +
+    'Rules:\n' +
+    '- If multiple characters say the same thing together, join their names with "/" (e.g., João/Maria|Let''s go!).\n' +
+    '- Speech usually starts with “—” or is between quotes, but may also be inferred from context.\n' +
+    '- Everything else is narration (use the name "narrator").\n' +
+    '- Maintain the original chronological order of narration and speech.\n' +
+    '- Correct grammar and spelling (in Portuguese).\n' +
+    '- Adapt narration and speech to be natural for voiceover (TTS-ready).\n' +
+    '- You may rephrase narration or speech, but do not change the core meaning or story outcome.\n' +
+    '- Replace silent, vague or expressive-only lines like "..." or sighs with a narration (e.g. narrator|Mat remains silent).\n' +
+    '- Translate to Portuguese if the text is in English.\n' +
+    '- Ignore any content that is not part of the story, such as notes, summaries, author info, dedications, or titles.\n' +
+    '- Do not return any explanations, only the final adapted lines in the correct format.\n\n' +
+    'If no valid line is found, return only:\n' +
+    'no characters';
 
   procedure Generate;
   var
-    sPersonagem: string;
+    sPersonagem, sResponse: string;
   begin
+    oIRgnLeitorIAHttp := GetAPI;
     try
-      oResponse := oIRgnLeitorIAHttp.Generate(oRequestIA);
-      oPagina.ListaPersonagens.Clear;
-      if (oResponse.Response <> '') and (not(oResponse.Response.Contains('sem personagens'))) then
-      begin
-        oPersonagens.Text := oResponse.Response.Replace(' — ', #13#10).Replace(' – ', #13#10);
+      oRequestIA.SetPrompt(PROMPT, oPagina.Texto);
+      sResponse := oIRgnLeitorIAHttp.Generate(oRequestIA);
+
+      case AnsiIndexStr(sResponse, ['[change-connection]', 'no characters']) of
+        0:
+          begin
+            Imprimir('Falha de conexão na página ' + oPagina.Numero.ToString + '/' + ALivro.Count.ToString + ' modo: ' + IfThen(oIRgnLeitorIAHttp.GetTipo = ttaOnline, 'Online', 'Local') + '. Reconectando...');
+            Generate;
+          end;
+        1:
+          begin
+            Exit;
+          end
+
+      else
+        oPersonagens.Text := sResponse;
         for sPersonagem in oPersonagens do
         begin
-          if (sPersonagem.Contains('|')) and (Length(sPersonagem.Split(['|'])) >= 2) then
+          if (sPersonagem.Contains('|')) then
           begin
-            if (sPersonagem.Split(['|'])[0].Trim <> 'nome') and (StrToInt64Def(sPersonagem.Split(['|'])[1].Trim.Replace('\n', '').Replace(' ', ''), -1) = -1) then
-            begin
-              oPagina.ListaPersonagens.Add(TPersonagemFala.Create);
-              oPagina.ListaPersonagens.Last.nome := sPersonagem.Split(['|'])[0].Trim;
-              oPagina.ListaPersonagens.Last.fala := sPersonagem.Split(['|'])[1].Trim.Replace('\n', '').Replace('  ', ' ');
-            end;
-          end
-          else
-          begin
-            if (iTentativas > 0) then
-            begin
-              Inc(iTentativas, -1);
-              Generate;
-              Break;
-            end;
+            oPagina.ListaPersonagens.Add(TPersonagemFala.Create);
+            oPagina.ListaPersonagens.Last.nome := sPersonagem.Split(['|'])[0].Trim;
+            oPagina.ListaPersonagens.Last.fala := sPersonagem.Split(['|'])[1].Replace('—', '').Trim;
           end;
         end;
+
+        if (oPagina.ListaPersonagens.Count > 0) then
+        begin
+          oPagina.Processado := True;
+          oIDAOLeitorBook.SalvarPagina(ALivro, oPagina);
+          oIDAOLeitorBook.SalvarFala(ALivro, oPagina);
+        end;
+
+        Inc(iNumeroPagina);
+        Imprimir('Processada página ' + oPagina.Numero.ToString + ' - Total Geral: ' + iNumeroPagina.ToString + '/' + ALivro.Count.ToString + ' modo: ' + IfThen(oIRgnLeitorIAHttp.GetTipo = ttaOnline, 'Online', 'Local'));
       end;
+
     except
       on E: Exception do
       begin
-        if (iTentativas > 0) or (E.Message.Contains('timed out')) then
-        begin
-          Inc(iTentativas, -1);
-          oIRgnLeitorIAHttp.DescarregarModelo;
-          Sleep(5000);
-          Generate;
-        end
-        else
-          Raise;
+        Imprimir('Falha ' + E.ClassName + ': ' + E.Message + ' na página ' + oPagina.Numero.ToString + '/' + ALivro.Count.ToString + ' modo: ' + IfThen(oIRgnLeitorIAHttp.GetTipo = ttaOnline, 'Online', 'Local') + '. Reconectando...');
+        Generate;
       end;
     end;
   end;
@@ -189,47 +138,165 @@ var
 
 
 begin
-  dTime             := Now;
-  oIRgnLeitorIAHttp := TRgnLeitorIAHttp.Create.Ref;
-  oRequestIA        := TRequestIA.Create;
-  oPersonagens      := TStringList.Create;
-
+  iNumeroPagina := 0;
+  Imprimir('Preparando para extrair personagens e narrações via IA...');
+  oRequestIA   := TRequestIA.Create;
+  oPersonagens := TStringList.Create;
   try
-    iRequisicoes := 100;
     for oPagina in ALivro do
     begin
-      if (iRequisicoes = 0) then
+      if (not(oPagina.Processado)) then
       begin
-        oIRgnLeitorIAHttp.DescarregarModelo;
-        iRequisicoes := 100;
+        Generate;
       end;
-
-      iTentativas := 5;
-      Inc(iRequisicoes, -1);
-      oRequestIA.prompt := GetPrompt;
-      Generate;
     end;
   finally
-    oPersonagens.Free;
     oRequestIA.Free;
+    oPersonagens.Free;
   end;
 
-  with TStringList.Create do
-  begin
-    Add(TimeToStr(Now - dTime));
-    for oPagina in ALivro do
-    begin
-      for oPersonagem in oPagina.ListaPersonagens do
-      begin
-        Add(oPersonagem.nome + '|' + oPersonagem.fala);
-      end;
-    end;
-    SaveToFile('Personagens.txt');
-    Free;
-  end;
-
-  NormalizarNomes(ALivro);
-  DefinirPerfilPersonagem(ALivro);
+  // TRgnSistemaThreadFactory.CriarLoopTasks(oListaAPIs.Count, ALivro,
+  // procedure(const ATask: IOmniTask; const AObjeto: TObject)
+  // var
+  // oPagina: TPagina;
+  // oRequestIA: TRequestIA;
+  // oPersonagens: TStringList;
+  // oIRgnLeitorIAHttp: IRgnLeitorIAHttp;
+  //
+  // function GetPrompt: string;
+  // begin
+  // Result :=
+  // 'Extract direct speech and narration from the Portuguese text.\n' +
+  // 'Output each line in the format:\n' +
+  // 'name|speech\n' +
+  // 'narrator|narration\n\n' +
+  // 'Rules:\n' +
+  // '- If multiple characters say the same thing together, join their names with "/" (e.g., João/Maria|Let''s go!).\n' +
+  // '- Speech usually starts with “—” or is between quotes, but may also be inferred from context.\n' +
+  // '- Everything else is narration (use the name "narrator").\n' +
+  // '- Maintain the original chronological order of narration and speech.\n' +
+  // '- Correct grammar and spelling (in Portuguese).\n' +
+  // '- Adapt narration and speech to be natural for voiceover (TTS-ready).\n' +
+  // '- You may rephrase narration or speech, but do not change the core meaning or story outcome.\n' +
+  // '- Replace silent, vague or expressive-only lines like "..." or sighs with a narration (e.g. narrator|Mat remains silent).\n' +
+  // '- Translate to Portuguese if the text is in English.\n' +
+  // '- Ignore any content that is not part of the story, such as notes, summaries, author info, dedications, or titles.\n' +
+  // '- Do not return any explanations, only the final adapted lines in the correct format.\n\n' +
+  // 'If no valid line is found, return only:\n' +
+  // 'no characters';
+  // end;
+  //
+  // procedure Generate;
+  // var
+  // sPersonagem, sResponse: string;
+  // begin
+  // try
+  // try
+  // if (oIRgnLeitorIAHttp.GetTipo = ttaLocal) then
+  // oCriticalSection.Enter;
+  //
+  // sResponse := oIRgnLeitorIAHttp.Generate(oRequestIA);
+  //
+  // if (oIRgnLeitorIAHttp.GetTipo = ttaLocal) then
+  // oCriticalSection.Release;
+  //
+  // oPagina.Response := sResponse;
+  // oPagina.ListaPersonagens.Clear;
+  //
+  // if (sResponse = '[change-connection]') then
+  // begin
+  // Imprimir('Falha de conexão na página ' + oPagina.Numero.ToString + '/' + ALivro.Count.ToString + ' modo: ' + IfThen(oIRgnLeitorIAHttp.GetTipo = ttaOnline, 'Online', 'Local') + '. Reconectando...');
+  //
+  // if (oIRgnLeitorIAHttp.Expirada) then
+  // begin
+  // oCriticalSection.Enter;
+  // oIDAOLeitorBook.AtualizarAPI(oIRgnLeitorIAHttp.GetKey);
+  // oCriticalSection.Release;
+  // end;
+  //
+  // oIRgnLeitorIAHttp.SetUso(False);
+  // oIRgnLeitorIAHttp := GetAPI(ttaLocal);
+  // Generate;
+  // Exit;
+  // end;
+  //
+  // if (not(sResponse.Contains('no characters'))) then
+  // begin
+  // if (sResponse.Contains('|')) then
+  // begin
+  // oPersonagens.Text := sResponse;
+  // for sPersonagem in oPersonagens do
+  // begin
+  // if (sPersonagem.Contains('|')) then
+  // begin
+  // oPagina.Processado := True;
+  // oPagina.ListaPersonagens.Add(TPersonagemFala.Create);
+  // oPagina.ListaPersonagens.Last.nome := sPersonagem.Split(['|'])[0].Trim;
+  // oPagina.ListaPersonagens.Last.fala := sPersonagem.Split(['|'])[1].Replace('—', '').Trim;
+  // end;
+  // end;
+  //
+  // if (oPagina.ListaPersonagens.Count > 0) then
+  // begin
+  // oCriticalSection.Enter;
+  // oPagina.Processado := True;
+  // oIDAOLeitorBook.SalvarPagina(ALivro, oPagina);
+  // oIDAOLeitorBook.SalvarFala(ALivro, oPagina);
+  // oCriticalSection.Release;
+  // end;
+  // end
+  // else
+  // begin
+  // Imprimir('Falha de conexão na página ' + oPagina.Numero.ToString + '/' + ALivro.Count.ToString + ' modo: ' + IfThen(oIRgnLeitorIAHttp.GetTipo = ttaOnline, 'Online', 'Local') + '. Reconectando...');
+  // oIRgnLeitorIAHttp.SetUso(False);
+  // oIRgnLeitorIAHttp := GetAPI(ttaLocal);
+  // Generate;
+  // Exit;
+  // end;
+  // end;
+  //
+  // oCriticalSection.Enter;
+  // Inc(iNumeroPagina);
+  // oCriticalSection.Release;
+  //
+  // Imprimir('Processada página ' + oPagina.Numero.ToString + ' - Total Geral: ' + iNumeroPagina.ToString + '/' + ALivro.Count.ToString + ' modo: ' + IfThen(oIRgnLeitorIAHttp.GetTipo = ttaOnline, 'Online', 'Local'));
+  // except
+  // on E: Exception do
+  // begin
+  // Imprimir('Falha ' + E.ClassName + ': ' + E.Message + ' na página ' + oPagina.Numero.ToString + '/' + ALivro.Count.ToString + ' modo: ' + IfThen(oIRgnLeitorIAHttp.GetTipo = ttaOnline, 'Online', 'Local') + '. Reconectando...');
+  // oIRgnLeitorIAHttp.SetUso(False);
+  // oIRgnLeitorIAHttp := GetAPI(ttaLocal);
+  // Generate;
+  // end;
+  // end;
+  // finally
+  //
+  // Sleep(UM_SEGUNDO);
+  // end;
+  // end;
+  //
+  //
+  //
+  // begin
+  // oPagina := TPagina(AObjeto);
+  // if (not(oPagina.Processado)) then
+  // begin
+  // oIRgnLeitorIAHttp := GetAPI;
+  // oRequestIA := TRequestIA.Create;
+  // oPersonagens := TStringList.Create;
+  // try
+  //
+  // oRequestIA.SetPrompt(GetPrompt, oPagina.Texto);
+  // oPagina.PROMPT := oRequestIA.ToJson;
+  // Generate;
+  //
+  // finally
+  // oPersonagens.Free;
+  // oRequestIA.Free;
+  // oIRgnLeitorIAHttp.SetUso(False);
+  // end;
+  // end;
+  // end);
 end;
 
 
@@ -238,76 +305,57 @@ procedure TRgnLeitorBookPersonagens.NormalizarNomes(const ALivro: TLivro);
 var
   oPagina: TPagina;
   oRequestIA: TRequestIA;
-  oResponse: TResponse;
   iTentativas: Integer;
   oListaPersonagens: TListaPersonagensFalas;
-  oPersonagem: TPersonagemFala;
-  dTime: TTime;
+  oPersonagem, oPersonagemAux: TPersonagemFala;
+  oIRgnLeitorIAHttp: IRgnLeitorIAHttp;
+  sPersonagens: String;
 
   function GetPrompt: string;
   begin
     Result :=
-      'Você receberá uma lista contendo linhas no seguinte formato:\n' +
-      '\n' +
-      'ID|Nome\n' +
-      '\n' +
-      'Sua tarefa é processar cada linha da lista seguindo as instruções abaixo:\n' +
-      '\n' +
-      '[INSTRUÇÕES]\n' +
-      '\n' +
-      '1. Padronização de nomes repetidos:\n' +
-      '   Se um personagem aparecer com variações no nome (ex: “Eddye Murphy”, “Eddye”, “Murphy”), unifique todas essas ocorrências para uma versão padronizada e consistente (ex: “Eddye Murphy”).\n' +
-      '\n' +
-      '2. Identificação de gênero:\n' +
-      '   Determine o gênero do personagem com base no nome padronizado:\n' +
-      '   - masculino\n' +
-      '   - feminino\n' +
-      '\n' +
-      '3. Preservação do ID:\n' +
-      '   Não modifique o ID original. Ele deve ser mantido exatamente como foi recebido para que a correspondência continue válida.\n' +
-      '\n' +
-      '4. Não remova nenhuma linha da entrada.\n' +
-      '   Cada entrada recebida deve produzir uma linha correspondente na saída.\n' +
-      '\n' +
-      '[FORMATO DE SAÍDA]\n' +
-      '\n' +
-      'A saída deve conter uma linha para cada entrada, neste formato exato:\n' +
-      '\n' +
-      'ID|Nome padronizado|gênero\n' +
-      '\n' +
-      'Exemplo:\n' +
-      '\n' +
-      'Entrada:\n' +
-      '123|Eddye\n' +
-      '124|Murphy\n' +
-      '125|Joana\n' +
-      '127|Eddye Murphy\n' +
-      '\n' +
-      'Saída esperada:\n' +
-      '123|Eddye Murphy|masculino\n' +
-      '124|Eddye Murphy|masculino\n' +
-      '125|Joana|feminino\n' +
-      '127|Eddye Murphy|masculino\n' +
-      '\n' +
-      'IMPORTANTE:\n' +
-      'Use apenas masculino ou feminino no campo de gênero.\n' +
-      'Não invente nomes que não estejam presentes na entrada.\n' +
-      'Se dois nomes forem provavelmente da mesma pessoa, padronize para a forma mais completa e clara.\n' +
-      '\n' +
-      '[LISTA PARA PROCESSAR ABAIXO]' +
-      '\n\n' +
-      oListaPersonagens.GetPersonagens;
+      'You will receive a list of lines with:\n' +
+      'ID|Name|Speech\n\n' +
+      'Your task:\n' +
+      '- Standardize names if they refer to the same character\n' +
+      '- Use speech content to detect if different names (like "bruxa", "velha", "Unknown") are actually the same speaker\n' +
+      '- Merge names that share similar speech tone, phrases, or context\n' +
+      '- Always choose the most complete and descriptive name for all similar cases\n' +
+      '- If the name is generic or not a proper name (e.g., "bruxa", "velha", "homem", "mulher", "pessoa", "Unknown", "ele", "ela", "voz", "multidão", "criatura"...), replace it with "narrator"\n' +
+      '- Gender must be inferred using name and speech\n' +
+      '- Do not remove or change IDs\n' +
+      '- Do not invent any new names\n\n' +
+      'Output format:\n' +
+      'ID|Standardized name|gender\n' +
+      'Use only "male" or "female" for gender\n' +
+      'Return only the list in the exact format, no comments'
   end;
 
   procedure Generate;
   var
-    sPersonagem: string;
+    sPersonagem, sResponse: string;
     oPersonagens: TStringList;
   begin
     try
+      oIRgnLeitorIAHttp := GetAPI(ttaOnline);
       oPersonagens      := TStringList.Create;
-      oResponse         := oIRgnLeitorIAHttp.Generate(oRequestIA);
-      oPersonagens.Text := oResponse.Response;
+      sResponse         := oIRgnLeitorIAHttp.Generate(oRequestIA);
+      oPersonagens.Text := sResponse;
+      oPersonagens.SaveToFile(ALivro.nome + '.txt');
+
+      if (sResponse = '[change-connection]') then
+      begin
+        Imprimir('Falha de conexão - modo: ' + IfThen(oIRgnLeitorIAHttp.GetTipo = ttaOnline, 'Online', 'Local') + '. Reconectando...');
+
+        if (oIRgnLeitorIAHttp.Expirada) then
+        begin
+          oIDAOLeitorBook.AtualizarAPI(oIRgnLeitorIAHttp.GetKey);
+        end;
+
+        oIRgnLeitorIAHttp := GetAPI;
+        Generate;
+        Exit;
+      end;
 
       for sPersonagem in oPersonagens do
       begin
@@ -324,8 +372,7 @@ var
         if (iTentativas > 0) or (E.Message.Contains('timed out')) then
         begin
           Inc(iTentativas, -1);
-          oIRgnLeitorIAHttp.DescarregarModelo;
-          Sleep(5000);
+          Sleep(UM_SEGUNDO);
           Generate;
         end
         else
@@ -338,149 +385,46 @@ var
 
 begin
   iTentativas       := 3;
-  dTime             := Now;
   oRequestIA        := TRequestIA.Create;
   oListaPersonagens := TListaPersonagensFalas.Create(False);
 
   try
-
-    for oPagina in ALivro do
+    for sPersonagens in ALivro.GetPersonagens do
     begin
-      for oPersonagem in oPagina.ListaPersonagens do
-      begin
-        oListaPersonagens.Add(oPersonagem);
-      end;
+      oPersonagem          := ALivro.GetPersonagem(sPersonagens)[0];
+      oPersonagem.auxiliar := sPersonagens;
+      oListaPersonagens.Add(oPersonagem);
     end;
 
-    oRequestIA.prompt := GetPrompt;
-    Generate;
-
-    for oPagina in ALivro do
+    if (oListaPersonagens.Count > 0) then
     begin
-      for oPersonagem in oPagina.ListaPersonagens do
-      begin
-        oListaPersonagens.Add(oPersonagem);
-      end;
-    end;
+      oRequestIA.SetPrompt(GetPrompt, oListaPersonagens.GetPersonagens);
+      Generate;
 
-    with TStringList.Create do
-    begin
-      Add(TimeToStr(Now - dTime));
-      for oPagina in ALivro do
+      for oPersonagem in oListaPersonagens do
       begin
-        for oPersonagem in oPagina.ListaPersonagens do
+        if (oPersonagem.nome <> oPersonagem.auxiliar) then
         begin
-          Add(oPersonagem.nome + '|' + oPersonagem.genero + '|' + oPersonagem.fala);
+          for oPersonagemAux in ALivro.GetPersonagem(oPersonagem.auxiliar) do
+          begin
+            oPersonagemAux.nome       := oPersonagem.nome;
+            oPersonagemAux.genero     := oPersonagem.genero;
+            oPersonagemAux.sequencial := oPersonagem.sequencial;
+          end;
         end;
       end;
-      SaveToFile('PersonagensNormalizado.txt');
-      Free;
+
+      oListaPersonagens.Clear;
     end;
+
+    ALivro.normalizado := True;
+    oIDAOLeitorBook.SalvarPersonagens(ALivro);
+    oIDAOLeitorBook.SalvarFalas(ALivro);
+    oIDAOLeitorBook.SalvarCabecalho(ALivro);
+    oIDAOLeitorBook.RemoverPersonagensSemFala(ALivro);
   finally
     oRequestIA.Free;
     oListaPersonagens.Free;
-  end;
-end;
-
-
-
-procedure TRgnLeitorBookPersonagens.DefinirPerfilPersonagem(const ALivro: TLivro);
-var
-  oRequestIA: TRequestIA;
-  oResponse: TResponse;
-  iTentativas: Integer;
-  sPersonagem: string;
-  dTime: TTime;
-
-  function GetPrompt: string;
-  begin
-    Result :=
-      '[INSTRUÇÃO DE SISTEMA]\n' +
-      'Você é um classificador de personagens em livros de ficção. Sua tarefa é analisar um trecho das falas de um personagem de uma história e, com base na linguagem, vocabulário, temas e estilo,' + ' identificar qual seria o perfil mais compatível com o personagem.\n' +
-      '\n\n' +
-      '[SUA FUNÇÃO]\n' +
-      'Avalie o trecho de falas e indique, com base no tom e estilo das falas:\n' +
-      '1. Gênero que mais se aproxima da voz do personagem: **Masculino** ou **Feminino**\n' +
-      '2. Faixa etária que mais combina com o personagem: **Criança**, **Adulto** ou **Idoso**\n' +
-      '\n\n' +
-      '[COMO DECIDIR]\n' +
-      '- Leve em consideração o vocabulário utilizado, complexidade das frases, sentimentos expressos, ritmo e maturidade das ideias.\n' +
-      '- Evite conclusões óbvias apenas com base em personagens ou contexto externo. Baseie-se apenas no **estilo da fala**.\n' +
-      '\n\n' +
-      '[CASO DE INCERTEZA]\n' +
-      'Se não for possível determinar com segurança o perfil do personagem, **sorteie uma combinação plausível de gênero e idade**, que seja **coerente com o tom geral do texto**.\n' +
-      '\n\n' +
-      '[FORMATO DE RESPOSTA]\n' +
-      'Responda com uma única linha, exatamente no formato abaixo (sem ponto final):\n' +
-      '\n' +
-      'Gênero|Idade\n' +
-      '\n' +
-      'Exemplos válidos:\n' +
-      'Masculino|Adulto\n' +
-      'Feminino|Idoso\n' +
-      '\n\n' +
-      '[NOME DO PERSONGEM]\n' +
-      '"' + sPersonagem + '"' +
-      '\n\n' +
-      '[TEXTO A SER ANALISADO]\n' +
-      '"' + ALivro.GetTrechoPorPersonagem(sPersonagem) + '"';
-  end;
-
-  procedure Generate;
-  var
-    oPersonagem: TPersonagemFala;
-  begin
-    try
-      oResponse := oIRgnLeitorIAHttp.Generate(oRequestIA);
-
-      if (oResponse.Response.Contains('|')) and (Length(oResponse.Response.Split(['|'])) >= 2) then
-      begin
-        for oPersonagem in ALivro.GetPersonagem(sPersonagem) do
-        begin
-          oPersonagem.genero         := oResponse.Response.Split(['|'])[0].Trim;
-          oPersonagem.idade_aparente := oResponse.Response.Split(['|'])[1].Trim;
-        end;
-      end
-      else
-      begin
-        if (iTentativas > 0) then
-        begin
-          Inc(iTentativas, -1);
-          Generate;
-        end;
-      end;
-    except
-      on E: Exception do
-      begin
-        if (iTentativas > 0) or (E.Message.Contains('timed out')) then
-        begin
-          Inc(iTentativas, -1);
-          oIRgnLeitorIAHttp.DescarregarModelo;
-          Sleep(5000);
-          Generate;
-        end
-        else
-          Raise;
-      end;
-    end;
-  end;
-
-
-
-begin
-  iTentativas := 3;
-  dTime       := Now;
-  oRequestIA  := TRequestIA.Create;
-
-  try
-    for sPersonagem in ALivro.GetPersonagens do
-    begin
-      oRequestIA.prompt := GetPrompt;
-      Generate;
-    end;
-  finally
-    oIRgnLeitorIAHttp.DescarregarModelo;
-    oRequestIA.Free;
   end;
 end;
 

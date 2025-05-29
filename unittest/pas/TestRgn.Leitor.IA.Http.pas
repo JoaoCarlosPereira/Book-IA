@@ -8,7 +8,6 @@ uses
 type
   TestRgnLeitorIAHttp = class(TTestCase)
   private
-    oIRgnLeitorIAHttp: IRgnLeitorIAHttp;
     oRequestIA: TRequestIA;
   public
     procedure SetUp; override;
@@ -27,8 +26,8 @@ uses
 
 procedure TestRgnLeitorIAHttp.SetUp;
 begin
-  oIRgnLeitorIAHttp := TRgnLeitorIAHttp.Create;
-  oRequestIA        := TRequestIA.Create;
+
+  oRequestIA := TRequestIA.Create;
 end;
 
 
@@ -42,14 +41,12 @@ end;
 
 procedure TestRgnLeitorIAHttp.TestConexaoComIA;
 var
-  oRespostaIA: TResponse;
+  sResponse: string;
+  oIRgnLeitorIAHttp: IRgnLeitorIAHttp;
 begin
-  oRequestIA.model  := 'deepseek-r1:32b';
-  oRequestIA.prompt := 'IA Você está me ouvindo?, responda apenas sim ou não';
-
-  oRespostaIA := oIRgnLeitorIAHttp.Generate(oRequestIA);
-
-  CheckTrue(oRespostaIA.Response.ToLower.Contains('sim'), 'IA offline');
+  oIRgnLeitorIAHttp := TRgnLeitorIAHttp.Create(ttaLocal);
+  sResponse         := oIRgnLeitorIAHttp.Generate(oRequestIA);
+  CheckTrue(sResponse.ToLower.Contains('sim'), 'IA offline');
 end;
 
 
@@ -59,7 +56,7 @@ var
   oRgnLeitorBook: IRgnLeitorBook;
 begin
   oRgnLeitorBook := TRgnLeitorBook.Create;
-  oRgnLeitorBook.ProcessarBook('D:\dsv-git\dsv-delphi\Book-IA\unittest\input\Carmilla.pdf');
+  oRgnLeitorBook.ProcessarBook('D:\dsv-git\dsv-delphi\Book-IA\unittest\input\O_Olho_do_Mundo_-_A_Roda_do_Tempo_-_Vol.__1__-_Robert_Jordan.pdf');
 end;
 
 initialization
