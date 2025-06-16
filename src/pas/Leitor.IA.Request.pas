@@ -7,6 +7,42 @@ uses
   System.Classes, System.Generics.Collections;
 
 type
+  TJson = class
+  public
+    function ToJson: String;
+  end;
+
+  TTTSVoice = class(TJson)
+  private
+    Finput_text: String;
+    Foutput: string;
+    Fref_audio: string;
+  public
+    property input_text: string read Finput_text write Finput_text;
+    property output: string read Foutput write Foutput;
+    property ref_audio: string read Fref_audio write Fref_audio;
+  end;
+
+  TTrilha = class(TJson)
+  private
+    Fprompt: String;
+    Foutput: string;
+  public
+    property prompt: string read Fprompt write Fprompt;
+    property output: string read Foutput write Foutput;
+  end;
+
+  TTTSVoiceRet = class
+  private
+    Fstatus: String;
+    Ftentativas: Integer;
+    Fsimilaridade_final: Integer;
+  public
+    property status: string read Fstatus write Fstatus;
+    property tentativas: Integer read Ftentativas write Ftentativas;
+    property similaridade_final: Integer read Fsimilaridade_final write Fsimilaridade_final;
+  end;
+
   TMessage = class
   private
     Frole: string;
@@ -16,7 +52,7 @@ type
     property content: string read Fcontent write Fcontent;
   end;
 
-  TRequestIA = class
+  TRequestIA = class(TJson)
   private
     Fmodel: string;
     Fstream: Boolean;
@@ -28,13 +64,12 @@ type
     destructor Destroy; override;
 
     procedure SetPrompt(const APrompt, AContent: string);
-    function ToJson: String;
 
     property model: string read Fmodel write Fmodel;
     property stream: Boolean read Fstream write Fstream;
     property messages: TList<TMessage> read Fmessages write Fmessages;
-//    property top_p: Double read Ftop_p write Ftop_p;
-//    property temperature: Double read Ftemperature write Ftemperature;
+    // property top_p: Double read Ftop_p write Ftop_p;
+    // property temperature: Double read Ftemperature write Ftemperature;
   end;
 
   // Google
@@ -56,13 +91,12 @@ type
     property parts: TList<TPartRequest> read Fparts write Fparts;
   end;
 
-  TContentsWrapper = class
+  TContentsWrapper = class(TJson)
   private
     Fcontents: TList<TContentRequest>;
   public
     constructor Create;
     destructor Destroy; override;
-    function ToJson: String;
     property contents: TList<TContentRequest> read Fcontents write Fcontents;
   end;
 
@@ -104,42 +138,6 @@ procedure TRequestIA.SetPrompt(const APrompt, AContent: string);
 begin
   Fmessages.First.content := APrompt;
   Fmessages.Last.content  := AContent;
-end;
-
-
-
-function TRequestIA.ToJson: String;
-var
-  sJson: RawByteString;
-
-  function UnescapeUnicode(const AStr: string): string;
-  var
-    I: integer;
-  begin
-    Result := '';
-    I      := 1;
-    while I <= Length(AStr) do
-    begin
-      if (AStr[I] = '\') and (I < Length(AStr) - 5) and (AStr[I + 1] = 'u') then
-      begin
-        Result := Result + WideChar(StrToInt('$' + Copy(AStr, I + 2, 4)));
-        Inc(I, 6);
-      end
-      else
-      begin
-        Result := Result + AStr[I];
-        Inc(I);
-      end;
-    end;
-  end;
-
-
-
-begin
-  TSerializeFactory.GetInstance(JSONSuperObject).Serialize(Self, sJson);
-  Result := UTF8ToString(sJson);
-  Result := TIdURI.URLDecode(Result, IndyTextEncoding_UTF8);
-  Result := UnescapeUnicode(Result);
 end;
 
 { TContentsWrapper }
@@ -196,13 +194,13 @@ end;
 
 
 
-function TContentsWrapper.ToJson: String;
+function TJson.ToJson: String;
 var
   sJson: RawByteString;
 
   function UnescapeUnicode(const AStr: string): string;
   var
-    I: integer;
+    I: Integer;
   begin
     Result := '';
     I      := 1;

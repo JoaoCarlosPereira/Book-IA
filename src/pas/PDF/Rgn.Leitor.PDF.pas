@@ -125,6 +125,8 @@ begin
     TempText    := StringReplace(SL.Text, sLineBreak, ' ', [rfReplaceAll]);;
     Result.Text := StringReplace(TempText, '===PAGINA===', #13#10, [rfReplaceAll]);
   finally
+    TFile.Delete(OutputPath.Replace('.txt', '.pdf'));
+    TFile.Delete(OutputPath.Replace('.pdf', '.txt'));
     SL.Free;
   end;
 end;

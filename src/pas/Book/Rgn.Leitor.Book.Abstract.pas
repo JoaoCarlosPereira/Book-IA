@@ -74,7 +74,7 @@ begin
 
   if ((ATipoAPI = ttaLocal) or (oListaAPIs.Count = 0)) and (ATipoAPI <> ttaOnline) then
   begin
-    Result := TRgnLeitorIAHttp.Create(ATipoAPI);
+    Result := TRgnLeitorIAHttp.Create(ttaLocal);
     Exit;
   end;
 

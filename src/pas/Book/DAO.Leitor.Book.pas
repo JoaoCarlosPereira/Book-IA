@@ -4,7 +4,7 @@ interface
 
 uses
   Padrao.DAO, System.Generics.Collections, System.SysUtils, System.Classes, OtlTask,
-  Leitor.Book, SysmoSQL, Helper.HBoolean, Rgn.Leitor.IA.Http;
+  Leitor.Book, SysmoSQL, Helper.HBoolean, Rgn.Leitor.IA.Http, System.Types;
 
 type
   IDAOLeitorBook = interface
@@ -17,14 +17,18 @@ type
     procedure SalvarFala(const ALivro: TLivro; const APagina: TPagina);
 
     function LocalizarCabecalho(const ALivro: TLivro): Boolean;
+    function LocalizarLivrosPendentes(var ALivros: TStringDynArray): Boolean;
     function LocalizarPaginas(const ALivro: TLivro): Boolean;
     function LocalizarFalas(const ALivro: TLivro): Boolean;
     function LocalizarAPIS(const AListaAPI: TListaAPI): Boolean;
+    function LocalizarVozes(const AListaVozes: TListaVozes): Boolean;
     procedure AtualizarAPI(const AKey: string);
     procedure RemoverPersonagensSemFala(const ALivro: TLivro);
   end;
 
   TDAOLeitorBook = class(TPadraoDAO, IDAOLeitorBook)
+  private
+    function LocalizarLivrosPendentes(var ALivros: TStringDynArray): Boolean;
   public
     procedure SalvarCabecalho(const ALivro: TLivro);
     procedure SalvarPaginas(const ALivro: TLivro);
@@ -37,6 +41,7 @@ type
     function LocalizarPaginas(const ALivro: TLivro): Boolean;
     function LocalizarFalas(const ALivro: TLivro): Boolean;
     function LocalizarAPIS(const AListaAPI: TListaAPI): Boolean;
+    function LocalizarVozes(const AListaVozes: TListaVozes): Boolean;
     procedure AtualizarAPI(const AKey: string);
     procedure RemoverPersonagensSemFala(const ALivro: TLivro);
     function Ref: IDAOLeitorBook;
@@ -49,8 +54,8 @@ type
 implementation
 
 uses
-  Rgn.Sistema.ThreadFactory, System.Types, System.IOUtils, Leitor.IA.Response,
-  Leitor.IA.Request, SynCommons, Helper.HSQLBuilder, Helper.HSQL, System.DateUtils;
+  Rgn.Sistema.ThreadFactory, System.IOUtils, Leitor.IA.Response,
+  Leitor.IA.Request, Helper.HSQLBuilder, Helper.HSQL, System.DateUtils;
 
 
 
@@ -76,6 +81,7 @@ end;
 destructor TDAOLeitorBook.Destroy;
 begin
   inherited;
+  oConexao1.Close;
   oConexao1.Free;
 end;
 
@@ -142,6 +148,34 @@ end;
 
 
 
+function TDAOLeitorBook.LocalizarLivrosPendentes(var ALivros: TStringDynArray): Boolean;
+
+  function GetSQL: string;
+  begin
+    Result := 'SELECT * FROM TB_LIVROCABECALHO WHERE (FL_NORMALIZADO <>  :AFlag) or (FL_NARRADOR <> :AFlag) or (FL_NARRADOR <> :AFlag) or (FL_PRODUZIDO <> :AFlag) order by CD_SEQUENCIAL;';
+  end;
+
+
+
+begin
+  Result := False;
+  PrepararSQL(oSQLDataSet1, GetSQL);
+  oSQLDataSet1.ParamByName('AFlag').AsString := 'S';
+  oSQLDataSet1.Open;
+
+  oSQLDataSet1.First;
+  ALivros := [];
+  while (not(oSQLDataSet1.Eof)) do
+  begin
+    Result  := true;
+    ALivros := ALivros + [oSQLDataSet1.FieldByName('TX_TITULO').AsString + '.pdf'];
+    oSQLDataSet1.Next;
+  end;
+  oSQLDataSet1.Close;
+end;
+
+
+
 function TDAOLeitorBook.LocalizarPaginas(const ALivro: TLivro): Boolean;
 
   function GetSQL: string;
@@ -178,6 +212,38 @@ end;
 
 
 
+function TDAOLeitorBook.LocalizarVozes(const AListaVozes: TListaVozes): Boolean;
+
+  function GetSQL: string;
+  begin
+    Result :=
+      'SELECT CD_SEQUENCIAL, TX_NOME, TX_GENERO, TX_IDADE ' +
+      'FROM TB_LIVROVOZES ORDER BY RANDOM() + EXTRACT(MILLISECONDS FROM CLOCK_TIMESTAMP())';
+  end;
+
+
+
+begin
+  PrepararSQL(oSQLDataSet1, GetSQL);
+  oSQLDataSet1.Open;
+
+  AListaVozes.Clear;
+  oSQLDataSet1.First;
+  while (not(oSQLDataSet1.Eof)) do
+  begin
+    AListaVozes.Add(TVoz.Create);
+    AListaVozes.Last.nome       := oSQLDataSet1.FieldByName('TX_NOME').AsString;
+    AListaVozes.Last.genero     := oSQLDataSet1.FieldByName('TX_GENERO').AsString;
+    AListaVozes.Last.idade      := oSQLDataSet1.FieldByName('TX_IDADE').AsString;
+    AListaVozes.Last.sequencial := oSQLDataSet1.FieldByName('CD_SEQUENCIAL').AsLargeInt;
+    AListaVozes.Last.EmUso      := False;
+    oSQLDataSet1.Next;
+  end;
+  oSQLDataSet1.Close;
+end;
+
+
+
 function TDAOLeitorBook.Ref: IDAOLeitorBook;
 begin
   Result := Self;
@@ -209,9 +275,11 @@ function TDAOLeitorBook.LocalizarFalas(const ALivro: TLivro): Boolean;
       '  P.TX_GENERO, ' +
       '  P.TX_IDADE, ' +
       '  P.CD_VOZ, ' +
+      '  V.TX_NOME, ' +
       '  F.FL_PROCESSADO ' +
       'FROM TB_LIVROFALAS F ' +
-      'JOIN TB_LIVROPERSONAGENS P ON P.CD_SEQUENCIAL = F.CD_SEQUENCIALPERSONAGEM ' +
+      'INNER JOIN TB_LIVROPERSONAGENS P ON P.CD_SEQUENCIAL = F.CD_SEQUENCIALPERSONAGEM ' +
+      'LEFT OUTER JOIN TB_LIVROVOZES V ON V.CD_SEQUENCIAL = P.CD_VOZ ' +
       'WHERE F.CD_SEQUENCIALLIVRO = :ATitulo';
   end;
 
@@ -239,12 +307,14 @@ begin
       if (oDicionarioPaginas.TryGetValue(oSQLDataSet1.FieldByName('CD_SEQUENCIALPAGINA').AsLargeInt, oPagina)) then
       begin
         oPagina.ListaPersonagens.Add(TPersonagemFala.Create);
-        oPagina.ListaPersonagens.Last.sequencial     := oSQLDataSet1.FieldByName('CD_SEQUENCIAL').AsLargeInt;
+        oPagina.ListaPersonagens.Last.sequencial     := oSQLDataSet1.FieldByName('CD_SEQUENCIALPERSONAGEM').AsLargeInt;
+        oPagina.ListaPersonagens.Last.sequencialFala := oSQLDataSet1.FieldByName('CD_SEQUENCIAL').AsLargeInt;
         oPagina.ListaPersonagens.Last.nome           := oSQLDataSet1.FieldByName('TX_PERSONAGEM').AsString;
         oPagina.ListaPersonagens.Last.genero         := oSQLDataSet1.FieldByName('TX_GENERO').AsString;
         oPagina.ListaPersonagens.Last.idade_aparente := oSQLDataSet1.FieldByName('TX_IDADE').AsString;
         oPagina.ListaPersonagens.Last.fala           := oSQLDataSet1.FieldByName('TX_FALA').AsString;
-        oPagina.ListaPersonagens.Last.Voz            := oSQLDataSet1.FieldByName('CD_VOZ').AsLargeInt;
+        oPagina.ListaPersonagens.Last.Voz.sequencial := oSQLDataSet1.FieldByName('CD_VOZ').AsLargeInt;
+        oPagina.ListaPersonagens.Last.Voz.nome       := oSQLDataSet1.FieldByName('TX_NOME').AsString;
         oPagina.ListaPersonagens.Last.Processado     := oSQLDataSet1.FieldByName('FL_PROCESSADO').AsString = 'S';
       end;
 
@@ -269,6 +339,9 @@ procedure TDAOLeitorBook.SalvarCabecalho(const ALivro: TLivro);
 
 begin
   oInsert1.Limpar(tsbUpSert);
+
+  if (ALivro.sequencial > 0) then
+    oInsert1.Add('CD_SEQUENCIAL', ALivro.sequencial);
 
   oInsert1.Add('TX_TITULO', ALivro.nome);
   oInsert1.Add('FL_LIDO', ALivro.lido.ToSN, [tsoConflict]);
@@ -372,7 +445,7 @@ begin
     oInsert1.Add('TX_PERSONAGEM', sPersonagens, [tsoConflict]);
     oInsert1.Add('TX_GENERO', oPersonagem.genero, [tsoConflict]);
     oInsert1.Add('TX_IDADE', oPersonagem.idade_aparente, [tsoConflict]);
-    oInsert1.Add('CD_VOZ', oPersonagem.Voz, [tsoConflict]);
+    oInsert1.Add('CD_VOZ', oPersonagem.Voz.sequencial, [tsoConflict]);
     oInsert1.Add('DT_MANUTECAO', Now, [tsoConflict]);
     oInsert1.SetConflict(['CD_SEQUENCIAL']);
     oInsert1.SetTabela('TB_LIVROPERSONAGENS');
@@ -435,12 +508,18 @@ begin
   begin
     for oPersonagem in oPagina.ListaPersonagens do
     begin
-      oInsert1.Limpar;
-      oInsert1.Add('CD_SEQUENCIALLIVRO', ALivro.sequencial);
-      oInsert1.Add('CD_SEQUENCIALPAGINA', oPagina.sequencial);
-      oInsert1.Add('CD_SEQUENCIALPERSONAGEM', oPersonagem.sequencial);
-      oInsert1.Add('TX_FALA', oPersonagem.fala);
-      oInsert1.Add('DT_MANUTECAO', Now);
+      oInsert1.Limpar(tsbUpSert);
+      if (oPersonagem.sequencialFala > 0) then
+        oInsert1.Add('CD_SEQUENCIAL', oPersonagem.sequencialFala);
+
+      oInsert1.Add('CD_SEQUENCIALLIVRO', ALivro.sequencial, [tsoConflict]);
+      oInsert1.Add('CD_SEQUENCIALPAGINA', oPagina.sequencial, [tsoConflict]);
+      oInsert1.Add('CD_SEQUENCIALPERSONAGEM', oPersonagem.sequencial, [tsoConflict]);
+      oInsert1.Add('TX_FALA', oPersonagem.fala, [tsoConflict]);
+      oInsert1.Add('FL_PROCESSADO', oPersonagem.Processado.ToSN, [tsoConflict]);
+      oInsert1.Add('DT_MANUTECAO', Now, [tsoConflict]);
+
+      oInsert1.SetConflict(['CD_SEQUENCIAL']);
       oInsert1.SetTabela('TB_LIVROFALAS');
       oConexao1.Execute(oInsert1.SQL(), oInsert1.Params());
     end;

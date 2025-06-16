@@ -159,6 +159,8 @@ var
   oResponseLocal: TResponseLocal;
   oResponseOnline: TResponseOnline;
 
+
+
 begin
   Result := '';
   case oTipoAPI of

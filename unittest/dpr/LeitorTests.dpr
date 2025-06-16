@@ -55,7 +55,9 @@ uses
   DAO.Leitor.Book in '..\..\src\pas\Book\DAO.Leitor.Book.pas',
   Padrao.DAO in '..\..\..\shared\Padrao\DAO\Padrao.DAO.pas',
   Sistema.Retorno in '..\..\..\shared\shared\Sistema\Sistema.Retorno.pas',
-  I.Sistema.Retorno in '..\..\..\shared\shared\Sistema\I.Sistema.Retorno.pas';
+  I.Sistema.Retorno in '..\..\..\shared\shared\Sistema\I.Sistema.Retorno.pas',
+  Rgn.Leitor.Book.Vozes in '..\..\src\pas\Book\Vozes\Rgn.Leitor.Book.Vozes.pas',
+  Rgn.Leitor.Book.VozesHttp in '..\..\src\pas\Book\Vozes\Rgn.Leitor.Book.VozesHttp.pas';
 
 {$R *.RES}
 

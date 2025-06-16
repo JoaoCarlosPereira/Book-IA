@@ -5,9 +5,23 @@ interface
 uses
   System.SysUtils,
   System.Classes,
-  System.Generics.Collections, RecordHelper.HArray,  Helper.HBoolean;
+  System.Generics.Collections, RecordHelper.HArray, Helper.HBoolean;
 
 type
+  TVoz = class
+  public
+    Sequencial: Int64;
+    nome: string;
+    genero: string;
+    idade: string;
+    EmUso: Boolean;
+  end;
+
+  TListaVozes = class(TObjectList<TVoz>)
+  public
+    function GetVoz(const AGenero, AIdade: string): TVoz;
+  end;
+
   TPersonagemFala = class
   private
     FNome: string;
@@ -15,10 +29,15 @@ type
     FIdadeAparente: string;
     FFala: string;
   public
-    sequencial: Int64;
-    Voz: Integer;
+    Sequencial: Int64;
+    sequencialFala: Int64;
+    Voz: TVoz;
     processado: Boolean;
     auxiliar: string;
+    ArquivosAudio: TArrayString;
+    Duracao: Integer;
+    constructor Create;
+    destructor Destroy; override;
     property nome: string read FNome write FNome;
     property genero: string read FGenero write FGenero;
     property idade_aparente: string read FIdadeAparente write FIdadeAparente;
@@ -35,20 +54,21 @@ type
 
   TPagina = class
   public
-    sequencial: Int64;
+    Sequencial: Int64;
     Texto: string;
     ListaPersonagens: TListaPersonagensFalas;
     Prompt: String;
-    Processado: Boolean;
+    processado: Boolean;
     Response: String;
     Numero: Integer;
+    Duracao: Currency;
     constructor Create;
     destructor Destroy; override;
   end;
 
   TLivro = class(TObjectList<TPagina>)
   public
-    sequencial: Int64;
+    Sequencial: Int64;
     nome: string;
     lido: Boolean;
     normalizado: Boolean;
@@ -58,6 +78,8 @@ type
     function GetPersonagem(const ANome: string): TArray<TPersonagemFala>;
     function GetPersonagens: TArrayString;
     function HaPaginasPendentes: Boolean;
+    function HaFalasPendentes: Boolean;
+    function DuracaoTotal: Currency;
   end;
 
 implementation
@@ -71,7 +93,7 @@ uses
 constructor TPagina.Create;
 begin
   ListaPersonagens := TListaPersonagensFalas.Create;
-  Processado       := False;
+  processado       := False;
   Prompt           := '';
 end;
 
@@ -182,6 +204,19 @@ end;
 
 
 
+function TLivro.DuracaoTotal: Currency;
+var
+  oPagina: TPagina;
+begin
+  Result := 0;
+  for oPagina in Self do
+  begin
+    Result := Result + oPagina.Duracao;
+  end;
+end;
+
+
+
 function TLivro.GetPersonagem(const ANome: string): TArray<TPersonagemFala>;
 var
   oPagina: TPagina;
@@ -242,6 +277,24 @@ end;
 
 
 
+function TLivro.HaFalasPendentes: Boolean;
+var
+  oPagina: TPagina;
+  oPersonagem: TPersonagemFala;
+begin
+  Result := False;
+  for oPagina in Self do
+  begin
+    for oPersonagem in oPagina.ListaPersonagens do
+    begin
+      if (not(oPersonagem.processado)) then
+        Exit(True);
+    end;
+  end;
+end;
+
+
+
 function TLivro.HaPaginasPendentes: Boolean;
 var
   oPagina: TPagina;
@@ -249,9 +302,45 @@ begin
   Result := False;
   for oPagina in Self do
   begin
-    if (not(oPagina.Processado)) and (not(oPagina.Response.Contains('no characters'))) then
+    if (not(oPagina.processado)) and (not(oPagina.Response.Contains('no characters'))) then
     begin
       Exit(True);
+    end;
+  end;
+end;
+
+{ TPersonagemFala }
+
+
+
+constructor TPersonagemFala.Create;
+begin
+  Voz := TVoz.Create;
+end;
+
+
+
+destructor TPersonagemFala.Destroy;
+begin
+  Voz.Free;
+  inherited;
+end;
+
+{ TListaVozes }
+
+
+
+function TListaVozes.GetVoz(const AGenero, AIdade: string): TVoz;
+var
+  oVoz: TVoz;
+begin
+  Result := nil;
+  for oVoz in Self do
+  begin
+    if (not(oVoz.EmUso)) and (oVoz.genero.ToUpper.Equals(AGenero.ToUpper)) and ((oVoz.idade.ToUpper.Equals(AIdade.ToUpper)) or (AIdade.IsEmpty)) then
+    begin
+      oVoz.EmUso := True;
+      Exit(oVoz);
     end;
   end;
 end;

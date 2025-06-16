@@ -138,6 +138,9 @@ type
 
 implementation
 
+uses
+  SynCommons, IdURI, IdGlobal;
+
 { TMessageSimple }
 
 
@@ -308,9 +311,37 @@ end;
 
 
 function TResponseOnline.GetResponse: string;
+
+  function UnescapeUnicode(const AStr: string): string;
+  var
+    I: Integer;
+  begin
+    Result := '';
+    I      := 1;
+    while I <= Length(AStr) do
+    begin
+      if (AStr[I] = '\') and (I < Length(AStr) - 5) and (AStr[I + 1] = 'u') then
+      begin
+        Result := Result + WideChar(StrToInt('$' + Copy(AStr, I + 2, 4)));
+        Inc(I, 6);
+      end
+      else
+      begin
+        Result := Result + AStr[I];
+        Inc(I);
+      end;
+    end;
+  end;
+
+
+
 begin
   if (Self.candidates.Count > 0) and (Self.candidates.Last.content.parts.Count > 0) then
-    Result := Self.candidates.Last.content.parts.Last.text;
+  begin
+    Result := UTF8ToString(Self.candidates.Last.content.parts.Last.text);
+    Result := TIdURI.URLDecode(Result, IndyTextEncoding_UTF8);
+    Result := UnescapeUnicode(Result);
+  end;
 end;
 
 
