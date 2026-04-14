@@ -15,6 +15,7 @@ type
     procedure SalvarPersonagens(const ALivro: TLivro);
     procedure SalvarFalas(const ALivro: TLivro; const ALimpar: Boolean = true);
     procedure SalvarFala(const ALivro: TLivro; const APagina: TPagina);
+    procedure SalvarArquivo(const ALivro: TLivro; const ALimpar: Boolean);
 
     function LocalizarCabecalho(const ALivro: TLivro): Boolean;
     function LocalizarLivrosPendentes(var ALivros: TStringDynArray): Boolean;
@@ -36,6 +37,7 @@ type
     procedure SalvarPersonagens(const ALivro: TLivro);
     procedure SalvarFalas(const ALivro: TLivro; const ALimpar: Boolean = true);
     procedure SalvarFala(const ALivro: TLivro; const APagina: TPagina);
+    procedure SalvarArquivo(const ALivro: TLivro; const ALimpar: Boolean);
 
     function LocalizarCabecalho(const ALivro: TLivro): Boolean;
     function LocalizarPaginas(const ALivro: TLivro): Boolean;
@@ -218,7 +220,7 @@ function TDAOLeitorBook.LocalizarVozes(const AListaVozes: TListaVozes): Boolean;
   begin
     Result :=
       'SELECT CD_SEQUENCIAL, TX_NOME, TX_GENERO, TX_IDADE ' +
-      'FROM TB_LIVROVOZES ORDER BY RANDOM() + EXTRACT(MILLISECONDS FROM CLOCK_TIMESTAMP())';
+      'FROM TB_LIVROVOZES ORDER BY CD_SEQUENCIAL';
   end;
 
 
@@ -280,7 +282,7 @@ function TDAOLeitorBook.LocalizarFalas(const ALivro: TLivro): Boolean;
       'FROM TB_LIVROFALAS F ' +
       'INNER JOIN TB_LIVROPERSONAGENS P ON P.CD_SEQUENCIAL = F.CD_SEQUENCIALPERSONAGEM ' +
       'LEFT OUTER JOIN TB_LIVROVOZES V ON V.CD_SEQUENCIAL = P.CD_VOZ ' +
-      'WHERE F.CD_SEQUENCIALLIVRO = :ATitulo';
+      'WHERE F.CD_SEQUENCIALLIVRO = :ATitulo order by CD_SEQUENCIAL';
   end;
 
 
@@ -388,7 +390,7 @@ var
 
   function GetSQL: String;
   begin
-    Result := oInsert1.SQLWithValues.Replace(';', ' returning CD_SEQUENCIAL;')
+    Result := Copy(oInsert1.SQLWithValues, 0, oInsert1.SQLWithValues.Length - 1) + ' returning CD_SEQUENCIAL;';
   end;
 
 
@@ -495,6 +497,14 @@ procedure TDAOLeitorBook.SalvarFalas(const ALivro: TLivro; const ALimpar: Boolea
 var
   oPagina: TPagina;
   oPersonagem: TPersonagemFala;
+
+  function GetSQL: String;
+  begin
+    Result := oInsert1.SQLWithValues.Replace(';', ' returning CD_SEQUENCIAL;')
+  end;
+
+
+
 begin
   if (ALimpar) then
   begin
@@ -521,7 +531,56 @@ begin
 
       oInsert1.SetConflict(['CD_SEQUENCIAL']);
       oInsert1.SetTabela('TB_LIVROFALAS');
-      oConexao1.Execute(oInsert1.SQL(), oInsert1.Params());
+      PrepararSQL(oSQLDataSet1, GetSQL);
+      oSQLDataSet1.Open;
+      while (not(oSQLDataSet1.Eof)) do
+      begin
+        oPersonagem.sequencialFala := oSQLDataSet1.FieldByName('CD_SEQUENCIAL').AsLargeInt;
+        oSQLDataSet1.Next;
+      end;
+      oSQLDataSet1.Close;
+    end;
+  end;
+end;
+
+
+
+procedure TDAOLeitorBook.SalvarArquivo(const ALivro: TLivro; const ALimpar: Boolean);
+var
+  oPagina: TPagina;
+  oPersonagem: TPersonagemFala;
+  sArquivo: string;
+begin
+  if (ALimpar) then
+  begin
+    oDelete1.Limpar;
+    oDelete1.AddWhere('CD_SEQUENCIALLIVRO', ALivro.sequencial);
+    oDelete1.SetTabela('TB_LIVROFALAS');
+    oConexao1.Execute(oDelete1.SQL(), oDelete1.Params());
+  end;
+
+  for oPagina in ALivro do
+  begin
+    for oPersonagem in oPagina.ListaPersonagens do
+    begin
+      for sArquivo in oPersonagem.ArquivosAudio do
+      begin
+        oInsert1.Limpar(tsbUpSert);
+        if (oPersonagem.sequencialFala > 0) then
+          oInsert1.Add('CD_SEQUENCIAL', oPersonagem.sequencialFala);
+
+        oInsert1.Add('CD_SEQUENCIALLIVRO', ALivro.sequencial, [tsoConflict]);
+        oInsert1.Add('CD_SEQUENCIALPAGINA', oPagina.sequencial, [tsoConflict]);
+        oInsert1.Add('CD_SEQUENCIALPERSONAGEM', oPersonagem.sequencial, [tsoConflict]);
+        oInsert1.Add('CD_SEQUENCIALFALA', oPersonagem.sequencial, [tsoConflict]);
+        oInsert1.Add('TX_ARQUIVO', sArquivo, [tsoConflict]);
+        oInsert1.Add('FL_PROCESSADO', oPersonagem.Processado.ToSN, [tsoConflict]);
+        oInsert1.Add('DT_MANUTECAO', Now, [tsoConflict]);
+
+        oInsert1.SetConflict(['CD_SEQUENCIAL']);
+        oInsert1.SetTabela('TB_LIVROARQUIVOS');
+        oConexao1.Execute(oInsert1.SQL(), oInsert1.Params());
+      end;
     end;
   end;
 end;

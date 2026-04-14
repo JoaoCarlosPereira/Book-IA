@@ -1,0 +1,559 @@
+﻿unit Rgn.Leitor.Book.Vozes;
+
+interface
+
+uses
+  System.Generics.Collections, System.SysUtils, System.Classes, OtlTask,
+  Leitor.Book, Rgn.Leitor.IA.Http, Rgn.Leitor.Book.Abstract;
+
+type
+  IRgnLeitorBookVozes = interface
+    ['{6E325157-C547-4254-B77B-0E55BB4FA240}']
+    procedure ObterVozes(const ALivro: TLivro);
+  end;
+
+  TRgnLeitorBookVozes = class(TRgnLeitorBookAbstract, IRgnLeitorBookVozes)
+  private
+    oListaVozes: TListaVozes;
+    procedure DefinirVozes(const ALivro: TLivro);
+    procedure Gravar(const ALivro: TLivro);
+    procedure Unificar(const ALivro: TLivro);
+    procedure CriarTrilha(const ALivro: TLivro);
+  public
+    constructor Create;
+    destructor Destroy; override;
+    procedure ObterVozes(const ALivro: TLivro);
+  end;
+
+implementation
+
+uses
+  Rgn.Sistema.ThreadFactory, System.Types, System.IOUtils, Leitor.IA.Response,
+  Leitor.IA.Request, Helper.HNumeric, Rgn.Leitor.Book.VozesHttp,
+  DAO.Leitor.Book, Helper.HString, Windows, MMSystem,
+  System.RegularExpressions, Winapi.ShellAPI, Vcl.MPlayer, DateUtils;
+
+
+
+constructor TRgnLeitorBookVozes.Create;
+begin
+  inherited;
+  oListaVozes := TListaVozes.Create;
+end;
+
+
+
+destructor TRgnLeitorBookVozes.Destroy;
+begin
+  oListaVozes.Free;
+  inherited;
+end;
+
+
+
+procedure TRgnLeitorBookVozes.Gravar(const ALivro: TLivro);
+{
+  Regras implementadas:
+  - Se termina em "." e tem < 200, envia (removendo o ".").
+  - Se > 200, divide em partes < 200, priorizando espaços (senão corte seco).
+  - Se NÃO termina em ".", unir com próximos trechos:
+  • dentro da mesma página e,
+  • se necessário, no início da próxima página,
+  enquanto (comprimento acumulado < 300) e não houver ponto final.
+  - Se < 150, tenta unir com a próxima sentença (sem ultrapassar 199).
+  - Nunca envia "." para a API e nunca deixa "." no meio de uma gravação.
+
+  Dependências:
+  System.SysUtils, System.Classes, System.StrUtils,
+  System.Generics.Collections, System.Character, System.RegularExpressions
+}
+const
+  CMinLen = 50; // mínimo desejado (inclusive)
+  CMaxLen = 100; // exclusivo (sempre < 200) para envio à API
+  CMaxUniao = 100; // limite para união pré-sentenças (regra solicitada)
+
+  // ---------------------------------------------------------------------------
+  // Auxiliares de texto (nomes em português; parâmetros com prefixo A*)
+  // ---------------------------------------------------------------------------
+  function NormalizarEspacos(const ATexto: string): string;
+  var
+    iIndice01: Integer;
+    oBuilder: TStringBuilder;
+    bEspacoAnterior: Boolean;
+  begin
+    oBuilder := TStringBuilder.Create(ATexto.Length);
+    try
+      bEspacoAnterior := False;
+      for iIndice01   := 1 to ATexto.Length do
+      begin
+        if (ATexto[iIndice01] = ' ') then
+        begin
+          if (not bEspacoAnterior) then
+          begin
+            oBuilder.Append(' ');
+            bEspacoAnterior := True;
+          end;
+        end
+        else
+        begin
+          oBuilder.Append(ATexto[iIndice01]);
+          bEspacoAnterior := False;
+        end;
+      end;
+      Result := Trim(oBuilder.ToString);
+    finally
+      oBuilder.Free;
+    end;
+  end;
+
+  function TerminaComPonto(const ATexto: string): Boolean;
+  begin
+    Result := ATexto.TrimRight.EndsWith('.') or ATexto.TrimRight.EndsWith('?') or ATexto.TrimRight.EndsWith('!') or ATexto.TrimRight.EndsWith(')');
+  end;
+
+  function RemoverPontuacaoFinal(const ATexto: string): string;
+  var
+    sRes: string;
+  begin
+    sRes := Trim(ATexto);
+    while ((sRes <> '') and sRes.EndsWith('.')) do
+      Delete(sRes, sRes.Length, 1);
+    Result := Trim(sRes);
+  end;
+
+  function SanearTexto(const ATexto: string): string;
+  begin
+    // preserva pontuações básicas e normaliza quebras de linha
+    Result := TRegEx.Replace(ATexto, '[^0-9a-zA-ZÀ-ÿ\s,;:!?\.''"\-–—()\.]', ' ');
+    Result := NormalizarEspacos(Result.Replace(sLineBreak, ' ').Replace(#13, ' ').Replace(#10, ' '));
+  end;
+
+  procedure DividirPorTamanho(const ATexto: string; const iTamanhoMax: Integer; oSaida: TList<string>);
+  // Quebra respeitando palavras quando possível (último espaço <= limite).
+  var
+    sTexto, sParte: string;
+    iCorte, iPosEspaco: Integer;
+  begin
+    sTexto := Trim(ATexto);
+    while (sTexto <> '') do
+    begin
+      if (sTexto.Length <= iTamanhoMax) and (sTexto.Length >= CMinLen) then
+      begin
+        oSaida.Add(sTexto);
+        Break;
+      end;
+
+      iCorte := iTamanhoMax;
+      if (iCorte < sTexto.Length) then
+      begin
+        iPosEspaco := LastDelimiter(' ', sTexto.Substring(0, iCorte + 1));
+        if (iPosEspaco > 0) then
+          iCorte := iPosEspaco
+        else
+          iCorte := iTamanhoMax; // sem espaço — corte seco
+      end;
+
+      sParte := Trim(sTexto.Substring(0, iCorte));
+
+      if (oSaida.Count > 0) and (sParte <> '') and (sParte.Length <= CMinLen) then
+        oSaida[Pred(oSaida.Count)] := oSaida.Last + ' ' + sParte
+      else if (sParte <> '') then
+        oSaida.Add(sParte);
+
+      if (iCorte < sTexto.Length) then
+        sTexto := Trim(sTexto.Substring(iCorte))
+      else
+        sTexto := '';
+    end;
+  end;
+
+  procedure ExtrairSentencas(const ATexto: string; oDestino: TList<string>);
+  // Divide por ponto final (mantém o '.' na sentença para decidir fechamento).
+  var
+    iIndice01, iInicio: Integer;
+    sTexto: string;
+  begin
+    sTexto        := NormalizarEspacos(ATexto);
+    iInicio       := 1;
+    for iIndice01 := 1 to sTexto.Length do
+      if (sTexto[iIndice01] = '.') then
+      begin
+        oDestino.Add(Trim(sTexto.Substring(iInicio - 1, iIndice01 - iInicio + 1)));
+        iInicio := iIndice01 + 1;
+      end;
+
+    if (iInicio <= sTexto.Length) then
+    begin
+      sTexto := Trim(sTexto.Substring(iInicio - 1));
+      if (sTexto <> '') then
+        oDestino.Add(sTexto); // resto sem ponto final
+    end;
+  end;
+
+
+
+var
+  oPagina: TPagina;
+  oProxPagina: TPagina;
+  oPersonagem: TPersonagemFala;
+  oVozTTS: TTTSVoice;
+  oArquivosSaida: TStringList;
+
+  oListaSentencas: TList<string>;
+  oChunks: TList<string>;
+  oPartesTemp: TList<string>;
+
+  iPagIdx, iIndice01, iIndice02, iIndice03, iChunk: Integer;
+  sTextoAcumulado, sProximoTexto, sPeca, sPecaSemPonto: string;
+  sOutWav, sOutMp3: string;
+
+  procedure EnviarChunk(const sTextoSemPonto: string; const iPagina: Integer; const iSequencialFala, iIndiceChunk: Integer; const sRefAudio, sNomeLivro: string);
+  begin
+    oVozTTS.input_text := sTextoSemPonto.Trim;
+    if (TerminaComPonto(sTextoSemPonto)) then
+    begin
+      sOutWav := '/dsv/TTS/out/' + sNomeLivro + Format('/partes/Pagina_%d_Trecho_%d-%d_final.wav', [iPagina, iSequencialFala, iIndiceChunk]);
+    end
+    else
+      sOutWav := '/dsv/TTS/out/' + sNomeLivro + Format('/partes/Pagina_%d_Trecho_%d-%d.wav', [iPagina, iSequencialFala, iIndiceChunk]);
+
+    sOutMp3 := 'S:\' + sOutWav.Replace('/', '\').Replace('.wav', '.mp3');
+
+    if (not(TerminaComPonto(oVozTTS.input_text))) then
+      oVozTTS.input_text := oVozTTS.input_text + ',';
+
+    oVozTTS.input_text := oVozTTS.input_text.Replace('.', ',');
+    oVozTTS.input_text := oVozTTS.input_text.Replace(',', ' ,');
+
+    oVozTTS.output    := sOutWav;
+    oVozTTS.ref_audio := sRefAudio;
+
+    oArquivosSaida.Add('file ' + QuotedStr(sOutMp3.Replace('S:\', 'S:\\')));
+
+    if (TRgnLeitorBookVozesHttp.Create.Ref.Gravar(oVozTTS)) then
+    begin
+      oPersonagem.processado := True;
+      oPersonagem.ArquivosAudio.Add(sOutMp3);
+    end;
+  end;
+
+
+
+begin
+  Writeln('Gravando falas...');
+
+  oVozTTS         := TTTSVoice.Create;
+  oArquivosSaida  := TStringList.Create;
+  oListaSentencas := TList<string>.Create;
+  oChunks         := TList<string>.Create;
+  oPartesTemp     := TList<string>.Create;
+
+  try
+    // Laço por índice para permitir olhar a próxima página quando necessário
+    for iPagIdx := 0 to (ALivro.Count - 1) do
+    begin
+      oPagina := ALivro[iPagIdx];
+      Writeln(Format('Gravando Página %d de %d.', [oPagina.Numero, ALivro.Count]));
+
+      iIndice01 := 0;
+      while (iIndice01 < oPagina.ListaPersonagens.Count) do
+      begin
+        oPersonagem := oPagina.ListaPersonagens[iIndice01];
+
+        // Pula já processado ou marcadores especiais
+        if (oPersonagem.processado) or (oPersonagem.fala.Contains('@@')) or (oPersonagem.fala.IsEmpty) then
+        begin
+          oPersonagem.processado := True;
+          Inc(iIndice01);
+          Continue;
+        end;
+
+        sTextoAcumulado := SanearTexto(oPersonagem.fala);
+
+        // ================ 2) Quebrar em sentenças =================
+        oListaSentencas.Clear;
+        ExtrairSentencas(sTextoAcumulado, oListaSentencas);
+
+        // ================ 3) Montar chunks visando 150..199 e fechar sempre em ponto
+        oChunks.Clear;
+        sPeca         := '';
+        for iIndice02 := 0 to (oListaSentencas.Count - 1) do
+        begin
+          if (sPeca = '') then
+            sPeca := oListaSentencas[iIndice02]
+          else if (RemoverPontuacaoFinal(sPeca + ' ' + oListaSentencas[iIndice02]).Length < CMaxLen) then
+            sPeca := NormalizarEspacos(sPeca + ' ' + oListaSentencas[iIndice02])
+          else
+          begin
+            oChunks.Add(NormalizarEspacos(sPeca));
+            sPeca := oListaSentencas[iIndice02];
+          end;
+
+          if (TerminaComPonto(sPeca)) and (RemoverPontuacaoFinal(sPeca).Length >= CMinLen) then
+          begin
+            oChunks.Add(NormalizarEspacos(sPeca));
+            sPeca := '';
+          end;
+        end;
+        if (sPeca <> '') then
+          oChunks.Add(NormalizarEspacos(sPeca));
+
+        // ================ 4) Ajustar tamanhos finais e enviar (sem ".")
+        iChunk    := 0;
+        iIndice02 := 0;
+        while (iIndice02 < oChunks.Count) do
+        begin
+          sPeca         := NormalizarEspacos(oChunks[iIndice02]);
+          sPecaSemPonto := sPeca;
+
+          // Se < 150 e houver próxima, tenta agregar sem passar de 199
+          if ((sPecaSemPonto.Length < CMinLen) and (iIndice02 + 1 < oChunks.Count)) then
+          begin
+            if (RemoverPontuacaoFinal(sPeca + ' ' + oChunks[iIndice02 + 1]).Length < CMaxLen) then
+            begin
+              sPeca := NormalizarEspacos(sPeca + ' ' + oChunks[iIndice02 + 1]);
+              // sPecaSemPonto := RemoverPontuacaoFinal(sPeca);
+              Inc(iIndice02); // consome o próximo
+            end;
+          end;
+
+          if (sPecaSemPonto = '') then
+          begin
+            Inc(iIndice02);
+            Continue;
+          end;
+
+          if (sPecaSemPonto.Length < CMaxLen) then
+          begin
+            EnviarChunk(sPecaSemPonto, oPagina.Numero, oPersonagem.sequencialFala, iChunk, oPersonagem.Voz.nome, ALivro.nome);
+            Inc(iChunk);
+          end
+          else
+          begin
+            // frase longa sem pontos suficientes: quebra por tamanho
+            oPartesTemp.Clear;
+            DividirPorTamanho(sPecaSemPonto, CMaxLen - 1, oPartesTemp);
+            for iIndice03 := 0 to (oPartesTemp.Count - 1) do
+            begin
+              EnviarChunk(oPartesTemp[iIndice03], oPagina.Numero, oPersonagem.sequencialFala, iChunk, oPersonagem.Voz.nome, ALivro.nome);
+              Inc(iChunk);
+            end;
+          end;
+
+          Inc(iIndice02);
+        end;
+
+        // marca o item inicial como processado
+        oPersonagem.processado := True;
+
+        Inc(iIndice01);
+      end;
+
+      // Persistência por página
+      oIDAOLeitorBook.SalvarFala(ALivro, oPagina);
+    end;
+
+    // Finalização do livro
+    if (not ALivro.HaPaginasPendentes) then
+    begin
+      oArquivosSaida.SaveToFile('S:\dsv\TTS\out\'+ALivro.nome+'\partes\lista.txt');
+//      Unificar(ALivro);
+      ALivro.produzido := True;
+      oIDAOLeitorBook.SalvarCabecalho(ALivro);
+    end;
+
+  finally
+    oPartesTemp.Free;
+    oChunks.Free;
+    oListaSentencas.Free;
+    oArquivosSaida.Free;
+    oVozTTS.Free;
+  end;
+end;
+
+
+
+procedure TRgnLeitorBookVozes.ObterVozes(const ALivro: TLivro);
+begin
+  if (not(ALivro.produzido)) then
+  begin
+    Writeln('Definindo Vozes...');
+    ALivro.Clear;
+    oIDAOLeitorBook.LocalizarPaginas(ALivro);
+    DefinirVozes(ALivro);
+    Gravar(ALivro);
+  end;
+  CriarTrilha(ALivro);
+end;
+
+
+
+procedure TRgnLeitorBookVozes.Unificar(const ALivro: TLivro);
+var
+  oComandoUnir: TStringList;
+begin
+  oComandoUnir := TStringList.Create;
+  try
+    oComandoUnir.LoadFromFile('S:\dsv\TTS\out\unir.bat');
+    oComandoUnir.Text := StringReplace(oComandoUnir.Text, 'lista.txt', 'S:\dsv\TTS\out\' + ALivro.nome + '\partes\lista.txt', [rfReplaceAll]);
+    oComandoUnir.Text := StringReplace(oComandoUnir.Text, 'output.mp3', 'S:\dsv\TTS\out\' + ALivro.nome + '\Saida.mp3', [rfReplaceAll]);
+    oComandoUnir.SaveToFile('S:\dsv\TTS\out\unir_bkp.bat');
+    WinExec(PAnsiChar(AnsiString('cmd.exe /c "S:\dsv\TTS\out\unir_bkp.bat"')), SW_HIDE);
+    DeleteFile('S:\dsv\TTS\out\unir_bkp.bat');
+  finally
+    oComandoUnir.Free;
+  end;
+end;
+
+
+
+procedure TRgnLeitorBookVozes.CriarTrilha(const ALivro: TLivro);
+var
+  oPlayer: TMediaPlayer;
+  oPagina: TPagina;
+  oPersonagem: TPersonagemFala;
+  iDuracao: Integer;
+  sArquivo, sTrecho, sResponse: String;
+  tDuracao: TTime;
+  oRequestIA: TRequestIA;
+  oIRgnLeitorIAHttp: IRgnLeitorIAHttp;
+  oTrilha: TTrilha;
+
+  function GetPrompt: string;
+  begin
+    Result := 'You are a specialist in cinematic soundtrack creation for audiobooks.\n' +
+      'You will receive a list of book excerpts, each accompanied by a time range representing when it occurs during the audiobook playback.\n' +
+      'Your task is to read the excerpts (written in Portuguese), understand their emotional tone, ambiance, and narrative content, and then produce a single, coherent, descriptive text prompt in English.\n' +
+      'This final prompt will be used as input to generate a background instrumental soundtrack using Facebook''s MusicGen model.\n' +
+      'The generated soundtrack should reflect the combined atmosphere of all excerpts.\n' +
+      'Avoid vocals, strong rhythms or abrupt transitions. Favor immersive, cinematic, and emotionally appropriate instrumental music.\n' +
+      '### Expected Output:\n' +
+      'Return only one single English prompt that describes the ideal soundtrack, like this:\n' +
+      '"An atmospheric, suspenseful instrumental soundtrack with slow tempo and orchestral elements like soft strings, ambient pads, and subtle percussions. Designed for a tense night scene on a cliff with wind, danger, and emotional restraint."\n' +
+      '\n' +
+      'Do not return any explanation or additional text. Return only the prompt in English between quotes.';
+  end;
+
+
+
+begin
+  oPlayer    := TMediaPlayer.Create(nil);
+  oRequestIA := TRequestIA.Create;
+  oTrilha    := TTrilha.Create;
+  try
+    for oPagina in ALivro do
+    begin
+      for oPersonagem in oPagina.ListaPersonagens do
+      begin
+        if (oPersonagem.processado) then
+        begin
+          for sArquivo in oPersonagem.ArquivosAudio do
+          begin
+            oPlayer.FileName := sArquivo;
+            oPlayer.Open;
+            oPersonagem.Duracao := oPersonagem.Duracao + oPlayer.Length div 1000; // Milissegundos para segundos
+            oPagina.Duracao     := oPagina.Duracao + oPersonagem.Duracao;
+            oPlayer.Close;
+          end;
+        end;
+      end;
+    end;
+
+    if (ALivro.DuracaoTotal > 300) then
+    begin
+      for oPagina in ALivro do
+      begin
+        tDuracao := 0;
+        for oPersonagem in oPagina.ListaPersonagens do
+        begin
+          sTrecho  := sTrecho + oPersonagem.fala + ' [' + TimeToStr(tDuracao) + ' - ' + TimeToStr(IncSecond(tDuracao, oPersonagem.Duracao)) + ' \n';
+          tDuracao := IncSecond(tDuracao, oPersonagem.Duracao);
+        end;
+        oRequestIA.SetPrompt(GetPrompt, sTrecho);
+        oIRgnLeitorIAHttp := GetAPI;
+
+        oTrilha.prompt := oIRgnLeitorIAHttp.Generate(oRequestIA);
+        oTrilha.output := '/dsv/TTS/out/' + ALivro.nome + '/partes/Trilha_Pag_' + oPagina.Numero.ToString + '.wav';
+        TRgnLeitorBookVozesHttp.Create.Ref.GerarTrilha(oTrilha)
+      end;
+    end
+    else
+    begin
+      tDuracao := 0;
+      for oPagina in ALivro do
+      begin
+        for oPersonagem in oPagina.ListaPersonagens do
+        begin
+          sTrecho  := sTrecho + oPersonagem.fala + ' [' + TimeToStr(tDuracao) + ' - ' + TimeToStr(IncSecond(tDuracao, oPersonagem.Duracao)) + ' \n';
+          tDuracao := IncSecond(tDuracao, oPersonagem.Duracao);
+        end;
+      end;
+
+      oRequestIA.SetPrompt(GetPrompt, sTrecho);
+      oIRgnLeitorIAHttp := GetAPI;
+
+      oTrilha.prompt := oIRgnLeitorIAHttp.Generate(oRequestIA);
+      oTrilha.output := '/dsv/TTS/out/' + ALivro.nome + '/partes/Trilha.wav';
+      TRgnLeitorBookVozesHttp.Create.Ref.GerarTrilha(oTrilha)
+    end;
+  finally
+    oPlayer.Free;
+    oRequestIA.Free;
+    oTrilha.Free;
+  end;
+end;
+
+
+
+procedure TRgnLeitorBookVozes.DefinirVozes(const ALivro: TLivro);
+var
+  oPersonagem, oPersonagemAux: TPersonagemFala;
+  sPersonagem: string;
+  oVoz: TVoz;
+begin
+  oIDAOLeitorBook.LocalizarVozes(oListaVozes);
+
+  oPersonagem := ALivro.GetPersonagem('narrator')[0];
+  if (oPersonagem.Voz.Sequencial = 0) then
+  begin
+    oVoz := oListaVozes.GetVoz(oPersonagem.genero, oPersonagem.idade_aparente);
+    if (Assigned(oVoz)) then
+    begin
+      for oPersonagemAux in ALivro.GetPersonagem('narrator') do
+      begin
+        oPersonagemAux.Voz.Sequencial := oVoz.Sequencial;
+        oPersonagemAux.Voz.nome       := oVoz.nome;
+      end;
+    end;
+  end;
+
+  for sPersonagem in ALivro.GetPersonagens do
+  begin
+    if (sPersonagem = 'narrator') then
+      Continue;
+
+    oPersonagem := ALivro.GetPersonagem(sPersonagem)[0];
+    if (oPersonagem.Voz.Sequencial = 0) then
+    begin
+      oVoz := oListaVozes.GetVoz(oPersonagem.genero, oPersonagem.idade_aparente);
+      if (not(Assigned(oVoz))) then
+        oVoz := oListaVozes.GetVoz(oPersonagem.genero, '');
+
+      if (not(Assigned(oVoz))) then
+        oVoz := ALivro.GetPersonagem('narrator')[0].Voz;
+
+      if (Assigned(oVoz)) then
+      begin
+        for oPersonagemAux in ALivro.GetPersonagem(sPersonagem) do
+        begin
+          oPersonagemAux.Voz.Sequencial := oVoz.Sequencial;
+          oPersonagemAux.Voz.nome       := oVoz.nome;
+        end;
+      end;
+    end;
+  end;
+
+  oIDAOLeitorBook.SalvarPersonagens(ALivro);
+end;
+
+end.

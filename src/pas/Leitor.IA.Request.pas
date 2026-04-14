@@ -111,7 +111,7 @@ uses
 
 constructor TRequestIA.Create;
 begin
-  Fmodel    := 'gemma3:27b';
+  Fmodel    := 'gemma3:27b-it-qat';
   Fstream   := false;
   Fmessages := TList<TMessage>.Create;
   Fmessages.Add(TMessage.Create);
@@ -226,6 +226,7 @@ begin
   Result := UTF8ToString(sJson);
   Result := TIdURI.URLDecode(Result, IndyTextEncoding_UTF8);
   Result := UnescapeUnicode(Result);
+  Result := UTF8Encode(Result);
 end;
 
 end.

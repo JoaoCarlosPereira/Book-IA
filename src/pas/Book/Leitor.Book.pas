@@ -70,6 +70,7 @@ type
   public
     Sequencial: Int64;
     nome: string;
+    Titulo: string;
     lido: Boolean;
     normalizado: Boolean;
     narradorObtido: Boolean;

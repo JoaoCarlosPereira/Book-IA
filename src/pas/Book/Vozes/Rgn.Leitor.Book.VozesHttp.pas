@@ -32,7 +32,7 @@ type
   end;
 
 const
-  URL_API_LOCAL = 'http://192.168.2.162';
+  URL_API_LOCAL = 'http://192.168.2.184';
   PORTA_PADRAO = 8001;
   QUINZE_MINUTOS = 900000;
   TIPO_ENVIO_RETORNO = 'application/json';

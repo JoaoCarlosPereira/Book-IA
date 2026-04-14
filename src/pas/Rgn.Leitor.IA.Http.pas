@@ -33,6 +33,7 @@ type
     oIRgnSistemaWebServiceRest: IRgnSistemaWebServiceRest;
     procedure DescarregarModelo;
     procedure Resetar(const ATask: IOmniTask);
+    function GetTag(const ADadosRetorno, ATag: string): string;
   public
     constructor Create(const ATipoAPI: TTipoAPI; const AKeyAPI: String = '');
     destructor Destroy; override;
@@ -48,7 +49,7 @@ type
   TListaAPI = TList<IRgnLeitorIAHttp>;
 
 const
-  URL_API_LOCAL = 'http://192.168.2.162';
+  URL_API_LOCAL = 'http://192.168.2.183';
   URL_API_ONLINE = 'https://generativelanguage.googleapis.com';
   PORTA_PADRAO = 11434;
   QUINZE_MINUTOS = 900000;
@@ -63,15 +64,13 @@ implementation
 uses
   Lib.RC.RestClient.Exception.Factory, Lib.Serialize.Enumerator,
   Lib.RC.RestClient.HTTPClient.Enumerator, System.DateUtils,
-  Rgn.Sistema.ThreadFactory;
+  Rgn.Sistema.ThreadFactory, System.JSON, Financeiro.BoletoHibrido.Helper;
 
 { TRgnLeitorIAHttp }
 
 
 
 constructor TRgnLeitorIAHttp.Create(const ATipoAPI: TTipoAPI; const AKeyAPI: String = '');
-var
-  oResponse: TResponseLocal;
 begin
   oTipoAPI                   := ATipoAPI;
   APIKey                     := AKeyAPI;
@@ -96,13 +95,6 @@ begin
           TIPO_ENVIO_RETORNO,
           JSONSuperObject,
           False);
-
-        oResponse := TResponseLocal.Create;
-        try
-          oIRgnSistemaWebServiceRest.Post(MetodoAPI, '{"model":"gemma3:27b", "keep_alive": -1,"messages":[{"content":"Acorde.","role":"user"}]}', oResponse, TResponseLocal);
-        finally
-          oResponse.Free;
-        end;
       end;
 
     ttaOnline:
@@ -153,13 +145,85 @@ end;
 
 
 
+function TRgnLeitorIAHttp.GetTag(const ADadosRetorno, ATag: string): string;
+
+  function ProcurarTag(const AValue: TJSONValue; const ATag: string; out AResult: string): Boolean;
+  var
+    oJson: TJSONObject;
+    oArrayJson: TJSONArray;
+    oJsonPair: TJSONPair;
+    iIndice: Integer;
+    oJsonValue: TJSONValue;
+  begin
+    Result := False;
+
+    if (AValue = nil) then
+      Exit(False);
+
+    if (AValue is TJSONObject) then
+    begin
+      oJson := TJSONObject(AValue);
+
+      for oJsonPair in oJson do
+      begin
+        if (SameText(oJsonPair.JsonString.Value, ATag)) then
+        begin
+          if oJsonPair.JsonValue is TJSONString then
+            AResult := TJSONString(oJsonPair.JsonValue).Value
+          else
+            AResult := oJsonPair.JsonValue.Value;
+          Exit(True);
+        end;
+      end;
+
+      for oJsonPair in oJson do
+      begin
+        if (ProcurarTag(oJsonPair.JsonValue, ATag, AResult)) then
+          Exit(True);
+      end;
+
+      Exit(False);
+    end;
+
+    if (AValue is TJSONArray) then
+    begin
+      oArrayJson  := TJSONArray(AValue);
+      for iIndice := 0 to oArrayJson.Count - 1 do
+      begin
+        oJsonValue := oArrayJson.Items[iIndice];
+        if ProcurarTag(oJsonValue, ATag, AResult) then
+          Exit(True);
+      end;
+
+      Exit(False);
+    end;
+
+    Result := False;
+  end;
+
+
+
+var
+  oJsonValue: TJSONValue;
+  sValue: string;
+begin
+  Result     := '';
+  oJsonValue := TJSONObject.ParseJSONValue(TBoletoHibridoHelper.TryDecode(ADadosRetorno));
+  try
+    if (Assigned(oJsonValue)) and (ProcurarTag(oJsonValue, ATag, sValue)) then
+      Result := sValue;
+  finally
+    oJsonValue.Free;
+  end;
+end;
+
+
+
 function TRgnLeitorIAHttp.Generate(const ARequestIA: TRequestIA): string;
 var
   oRequestOnline: TContentsWrapper;
   oResponseLocal: TResponseLocal;
   oResponseOnline: TResponseOnline;
-
-
 
 begin
   Result := '';
@@ -176,8 +240,8 @@ begin
           oIRgnSistemaWebServiceRest.Post(MetodoAPI, oRequestOnline.ToJson, oResponseOnline, TResponseOnline);
 
           if (oResponseOnline.Response <> '') then
-            Result := oResponseOnline.Response
-          else if (oIRgnSistemaWebServiceRest.getRetorno.Contains('GenerateRequestsPerDayPerProjectPerModel-FreeTie')) then
+            Result := GetTag(oIRgnSistemaWebServiceRest.getRetorno, 'text')
+          else if (oIRgnSistemaWebServiceRest.getRetorno.Contains('GenerateRequestsPerDayPerProjectPerModel-FreeTie')) or (oIRgnSistemaWebServiceRest.getRetorno.Contains('exceeded')) then
           begin
             Expirado := True;
             Result   := '[change-connection]';
@@ -195,7 +259,10 @@ begin
         oResponseLocal := TResponseLocal.Create;
         try
           oIRgnSistemaWebServiceRest.Post(MetodoAPI, ARequestIA.ToJson, oResponseLocal, TResponseLocal);
-          Result := oResponseLocal.Response;
+          if (oResponseLocal.Response <> '') then
+            Result := oResponseLocal.Response
+          else
+            Result := '[change-connection]';
         finally
           oResponseLocal.Free;
         end;

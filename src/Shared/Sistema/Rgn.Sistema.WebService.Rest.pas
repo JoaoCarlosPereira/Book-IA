@@ -770,6 +770,7 @@ function TRgnSistemaWebServiceRest.Post(const AAction: RawUTF8; const ARequestDt
   var
     oResponse: TRCResponse;
     sResponse: RawByteString;
+    ResponseText: string;
     oJson: TStringList;
   begin
     Result    := True;
@@ -777,15 +778,10 @@ function TRgnSistemaWebServiceRest.Post(const AAction: RawUTF8; const ARequestDt
     try
       Status := Self.request(methodPost, AAction, StringToUTF8(ARequestDto), AAditionalHeaders, sResponse);
 
-//      if(UTF8ToString(sResponse).Contains('RESOURCE_EXHAUSTED')) or (UTF8ToString(sResponse).Contains('timed out')) then
-//      begin
-//        Sleep(60000);
-//        DoPost(ARequestDto, AResponseDto, AAditionalHeaders,Result, AAction);
-//        Exit;
-//      end;
+      ResponseText := UTF8ToString(sResponse);
 
-      if (sResponse <> '') then
-        TSerializeFactory.GetInstance(Self.SerializeType).Unserialize(sResponse, AResponseDto, TObject(AResponseDto).ClassType);
+      if (ResponseText <> '') then
+        TSerializeFactory.GetInstance(Self.SerializeType).Unserialize(ResponseText, AResponseDto, TObject(AResponseDto).ClassType);
 
       if (SalvarJsons <> '') and (ARequestDto <> '') then
       begin
@@ -804,7 +800,7 @@ function TRgnSistemaWebServiceRest.Post(const AAction: RawUTF8; const ARequestDt
       if (TObject(AResponseDto) <> nil) then
       begin
         Result   := oResponse.GetResponse(AResponseDto, Self.ExceptionObj, Status, sResponse);
-        sRetorno := UTF8ToString(sResponse);
+        sRetorno := ResponseText;
         if (sResponse = '') then
           sRetorno := Self.ExceptionObj.codigo + ' - ' + Self.ExceptionObj.mensagem;
       end

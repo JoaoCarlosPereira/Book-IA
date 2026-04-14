@@ -38,9 +38,8 @@ uses
   I.Sistema.Retorno in '..\..\..\shared\Sistema\I.Sistema.Retorno.pas',
   EnumeradorTipoDeCliente in '..\..\..\shared\Enumerador\EnumeradorTipoDeCliente.pas',
   Rgn.Leitor.Book.Vozes in '..\pas\Book\Vozes\Rgn.Leitor.Book.Vozes.pas',
-  Rgn.Leitor.Book.VozesHttp in '..\pas\Book\Vozes\Rgn.Leitor.Book.VozesHttp.pas';
-
-
+  Rgn.Leitor.Book.VozesHttp in '..\pas\Book\Vozes\Rgn.Leitor.Book.VozesHttp.pas',
+  Financeiro.BoletoHibrido.Helper in '..\..\..\sysmos1-modular\Financeiro\BoletoHibrido\src\pas\Financeiro.BoletoHibrido.Helper.pas';
 
 procedure RestartSelf;
 var

@@ -98,7 +98,7 @@ var
 
 begin
   OutputPath := ACaminhoPDF.Replace(ExtractFileName(ACaminhoPDF), ExtractFileName(ACaminhoPDF).Replace(' ', '_'));
-  RenameFile(ACaminhoPDF, OutputPath);
+  TFile.Copy(ACaminhoPDF, OutputPath);
 
   if (DirectoryExists('C:\Users\s293\AppData\Local\Programs\Python\Python313')) then
     Cmd := Format('%s %s %s', ['C:\Users\s293\AppData\Local\Programs\Python\Python313\python.exe', 'extrair_pdf.py', OutputPath])
@@ -112,7 +112,7 @@ begin
     Sleep(UM_SEGUNDO);
   end;
 
-  Sleep(UM_MINUTO);
+  Sleep(5000);
 
   if not FileExists(OutputPath) then
     raise Exception.Create('Falha ao gerar o arquivo de saída .txt');

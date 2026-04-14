@@ -52,80 +52,326 @@ end;
 
 
 procedure TRgnLeitorBookVozes.Gravar(const ALivro: TLivro);
+{
+  Regras implementadas:
+  - Se termina em "." e tem < 200, envia (removendo o ".").
+  - Se > 200, divide em partes < 200, priorizando espaços (senão corte seco).
+  - Se NÃO termina em ".", unir com próximos trechos:
+  • dentro da mesma página e,
+  • se necessário, no início da próxima página,
+  enquanto (comprimento acumulado < 300) e não houver ponto final.
+  - Se < 150, tenta unir com a próxima sentença (sem ultrapassar 199).
+  - Nunca envia "." para a API e nunca deixa "." no meio de uma gravação.
+
+  Dependências:
+  System.SysUtils, System.Classes, System.StrUtils,
+  System.Generics.Collections, System.Character, System.RegularExpressions
+}
+const
+  CMinLen = 50; // mínimo desejado (inclusive)
+  CMaxLen = 100; // exclusivo (sempre < 200) para envio à API
+  CMaxUniao = 100; // limite para união pré-sentenças (regra solicitada)
+
+  // ---------------------------------------------------------------------------
+  // Auxiliares de texto (nomes em português; parâmetros com prefixo A*)
+  // ---------------------------------------------------------------------------
+  function NormalizarEspacos(const ATexto: string): string;
+  var
+    iIndice01: Integer;
+    oBuilder: TStringBuilder;
+    bEspacoAnterior: Boolean;
+  begin
+    oBuilder := TStringBuilder.Create(ATexto.Length);
+    try
+      bEspacoAnterior := False;
+      for iIndice01   := 1 to ATexto.Length do
+      begin
+        if (ATexto[iIndice01] = ' ') then
+        begin
+          if (not bEspacoAnterior) then
+          begin
+            oBuilder.Append(' ');
+            bEspacoAnterior := True;
+          end;
+        end
+        else
+        begin
+          oBuilder.Append(ATexto[iIndice01]);
+          bEspacoAnterior := False;
+        end;
+      end;
+      Result := Trim(oBuilder.ToString);
+    finally
+      oBuilder.Free;
+    end;
+  end;
+
+  function TerminaComPonto(const ATexto: string): Boolean;
+  begin
+    Result := ATexto.TrimRight.EndsWith('.') or ATexto.TrimRight.EndsWith('?') or ATexto.TrimRight.EndsWith('!') or ATexto.TrimRight.EndsWith(')');
+  end;
+
+  function RemoverPontuacaoFinal(const ATexto: string): string;
+  var
+    sRes: string;
+  begin
+    sRes := Trim(ATexto);
+    while ((sRes <> '') and sRes.EndsWith('.')) do
+      Delete(sRes, sRes.Length, 1);
+    Result := Trim(sRes);
+  end;
+
+  function SanearTexto(const ATexto: string): string;
+  begin
+    // preserva pontuações básicas e normaliza quebras de linha
+    Result := TRegEx.Replace(ATexto, '[^0-9a-zA-ZÀ-ÿ\s,;:!?\.''"\-–—()\.]', ' ');
+    Result := NormalizarEspacos(Result.Replace(sLineBreak, ' ').Replace(#13, ' ').Replace(#10, ' '));
+  end;
+
+  procedure DividirPorTamanho(const ATexto: string; const iTamanhoMax: Integer; oSaida: TList<string>);
+  // Quebra respeitando palavras quando possível (último espaço <= limite).
+  var
+    sTexto, sParte: string;
+    iCorte, iPosEspaco: Integer;
+  begin
+    sTexto := Trim(ATexto);
+    while (sTexto <> '') do
+    begin
+      if (sTexto.Length <= iTamanhoMax) and (sTexto.Length >= CMinLen) then
+      begin
+        oSaida.Add(sTexto);
+        Break;
+      end;
+
+      iCorte := iTamanhoMax;
+      if (iCorte < sTexto.Length) then
+      begin
+        iPosEspaco := LastDelimiter(' ', sTexto.Substring(0, iCorte + 1));
+        if (iPosEspaco > 0) then
+          iCorte := iPosEspaco
+        else
+          iCorte := iTamanhoMax; // sem espaço — corte seco
+      end;
+
+      sParte := Trim(sTexto.Substring(0, iCorte));
+
+      if (oSaida.Count > 0) and (sParte <> '') and (sParte.Length <= CMinLen) then
+        oSaida[Pred(oSaida.Count)] := oSaida.Last + ' ' + sParte
+      else if (sParte <> '') then
+        oSaida.Add(sParte);
+
+      if (iCorte < sTexto.Length) then
+        sTexto := Trim(sTexto.Substring(iCorte))
+      else
+        sTexto := '';
+    end;
+  end;
+
+  procedure ExtrairSentencas(const ATexto: string; oDestino: TList<string>);
+  // Divide por ponto final (mantém o '.' na sentença para decidir fechamento).
+  var
+    iIndice01, iInicio: Integer;
+    sTexto: string;
+  begin
+    sTexto        := NormalizarEspacos(ATexto);
+    iInicio       := 1;
+    for iIndice01 := 1 to sTexto.Length do
+      if (sTexto[iIndice01] = '.') then
+      begin
+        oDestino.Add(Trim(sTexto.Substring(iInicio - 1, iIndice01 - iInicio + 1)));
+        iInicio := iIndice01 + 1;
+      end;
+
+    if (iInicio <= sTexto.Length) then
+    begin
+      sTexto := Trim(sTexto.Substring(iInicio - 1));
+      if (sTexto <> '') then
+        oDestino.Add(sTexto); // resto sem ponto final
+    end;
+  end;
+
+
+
 var
   oPagina: TPagina;
+  oProxPagina: TPagina;
   oPersonagem: TPersonagemFala;
-  sPersonagem: string;
   oVozTTS: TTTSVoice;
-  sTrecho: string;
-  oTextoFala, oArquivosSaida: TStringList;
-  iIndice: Integer;
-begin
-  Writeln('Gravando Falas...');
+  oArquivosSaida: TStringList;
 
-  oVozTTS        := TTTSVoice.Create;
-  oTextoFala     := TStringList.Create;
-  oArquivosSaida := TStringList.Create;
-  try
-    for oPagina in ALivro do
+  oListaSentencas: TList<string>;
+  oChunks: TList<string>;
+  oPartesTemp: TList<string>;
+
+  iPagIdx, iIndice01, iIndice02, iIndice03, iChunk: Integer;
+  sTextoAcumulado, sProximoTexto, sPeca, sPecaSemPonto: string;
+  sOutWav, sOutMp3: string;
+
+  procedure EnviarChunk(const sTextoSemPonto: string; const iPagina: Integer; const iSequencialFala, iIndiceChunk: Integer; const sRefAudio, sNomeLivro: string);
+  begin
+    oVozTTS.input_text := sTextoSemPonto.Trim;
+    if (TerminaComPonto(sTextoSemPonto)) then
     begin
-      Writeln('Gravando Página ' + oPagina.Numero.ToString + ' de ' + ALivro.Count.ToString + '.');
-      for oPersonagem in oPagina.ListaPersonagens do
-      begin
-        if (not(oPersonagem.processado)) and (not(oPersonagem.fala.contains('@@'))) then
-        begin
-          sTrecho         := TRegEx.Replace(oPersonagem.fala, '[^a-zA-ZÀ-ÿ\s!?:,\.]', '');
-          sTrecho         := StringReplace(sTrecho, '.', #13#10, [rfReplaceAll]);
-          sTrecho         := StringReplace(sTrecho, '?', '?' + #13#10, [rfReplaceAll]);
-          sTrecho         := StringReplace(sTrecho, '!', '!' + #13#10, [rfReplaceAll]);
-          sTrecho         := StringReplace(sTrecho, ':', ':' + #13#10, [rfReplaceAll]);
-          oTextoFala.Text := sTrecho;
+      sOutWav := '/dsv/TTS/out/' + sNomeLivro + Format('/partes/Pagina_%d_Trecho_%d-%d_final.wav', [iPagina, iSequencialFala, iIndiceChunk]);
+    end
+    else
+      sOutWav := '/dsv/TTS/out/' + sNomeLivro + Format('/partes/Pagina_%d_Trecho_%d-%d.wav', [iPagina, iSequencialFala, iIndiceChunk]);
 
-          with TStringList.Create do
+    sOutMp3 := 'S:\' + sOutWav.Replace('/', '\').Replace('.wav', '.mp3');
+
+    if (not(TerminaComPonto(oVozTTS.input_text))) then
+      oVozTTS.input_text := oVozTTS.input_text + ',';
+
+    oVozTTS.input_text := oVozTTS.input_text.Replace('.', ',');
+    oVozTTS.input_text := oVozTTS.input_text.Replace(',', ' ,');
+
+    oVozTTS.output    := sOutWav;
+    oVozTTS.ref_audio := sRefAudio;
+
+    oArquivosSaida.Clear;
+    if (FileExists('S:\dsv\TTS\out\' + ALivro.nome + '\partes\lista.txt')) then
+      oArquivosSaida.LoadFromFile('S:\dsv\TTS\out\' + ALivro.nome + '\partes\lista.txt');
+
+    oArquivosSaida.Add('file ' + QuotedStr(sOutMp3));
+    oArquivosSaida.SaveToFile('S:\dsv\TTS\out\' + ALivro.nome + '\partes\lista.txt');
+
+    if (TRgnLeitorBookVozesHttp.Create.Ref.Gravar(oVozTTS)) then
+    begin
+      oPersonagem.processado := True;
+      oPersonagem.ArquivosAudio.Add(sOutMp3);
+    end;
+  end;
+
+
+
+begin
+  Writeln('Gravando falas...');
+
+  oVozTTS         := TTTSVoice.Create;
+  oArquivosSaida  := TStringList.Create;
+  oListaSentencas := TList<string>.Create;
+  oChunks         := TList<string>.Create;
+  oPartesTemp     := TList<string>.Create;
+
+  try
+    // Laço por índice para permitir olhar a próxima página quando necessário
+    for iPagIdx := 0 to (ALivro.Count - 1) do
+    begin
+      oPagina := ALivro[iPagIdx];
+      Writeln(Format('Gravando Página %d de %d.', [oPagina.Numero, ALivro.Count]));
+
+      iIndice01 := 0;
+      while (iIndice01 < oPagina.ListaPersonagens.Count) do
+      begin
+        oPersonagem := oPagina.ListaPersonagens[iIndice01];
+
+        // Pula já processado ou marcadores especiais
+        if (oPersonagem.processado) or (oPersonagem.fala.Contains('@@')) or (oPersonagem.fala.IsEmpty) then
+        begin
+          oPersonagem.processado := True;
+          Inc(iIndice01);
+          Continue;
+        end;
+
+        sTextoAcumulado := SanearTexto(oPersonagem.fala);
+
+        // ================ 2) Quebrar em sentenças =================
+        oListaSentencas.Clear;
+        ExtrairSentencas(sTextoAcumulado, oListaSentencas);
+
+        // ================ 3) Montar chunks visando 150..199 e fechar sempre em ponto
+        oChunks.Clear;
+        sPeca         := '';
+        for iIndice02 := 0 to (oListaSentencas.Count - 1) do
+        begin
+          if (sPeca = '') then
+            sPeca := oListaSentencas[iIndice02]
+          else if (RemoverPontuacaoFinal(sPeca + ' ' + oListaSentencas[iIndice02]).Length < CMaxLen) then
+            sPeca := NormalizarEspacos(sPeca + ' ' + oListaSentencas[iIndice02])
+          else
           begin
-            Text        := sTrecho;
-            for iIndice := 0 to Pred(Count) do
+            oChunks.Add(NormalizarEspacos(sPeca));
+            sPeca := oListaSentencas[iIndice02];
+          end;
+
+          if (TerminaComPonto(sPeca)) and (RemoverPontuacaoFinal(sPeca).Length >= CMinLen) then
+          begin
+            oChunks.Add(NormalizarEspacos(sPeca));
+            sPeca := '';
+          end;
+        end;
+        if (sPeca <> '') then
+          oChunks.Add(NormalizarEspacos(sPeca));
+
+        // ================ 4) Ajustar tamanhos finais e enviar (sem ".")
+        iChunk    := 0;
+        iIndice02 := 0;
+        while (iIndice02 < oChunks.Count) do
+        begin
+          sPeca         := NormalizarEspacos(oChunks[iIndice02]);
+          sPecaSemPonto := sPeca;
+
+          // Se < 150 e houver próxima, tenta agregar sem passar de 199
+          if ((sPecaSemPonto.Length < CMinLen) and (iIndice02 + 1 < oChunks.Count)) then
+          begin
+            if (RemoverPontuacaoFinal(sPeca + ' ' + oChunks[iIndice02 + 1]).Length < CMaxLen) then
             begin
-              if (Strings[iIndice].trim.Length >= 200) then
-              begin
-                oTextoFala[iIndice] := StringReplace(oTextoFala[iIndice], ',', ',' + #13#10, [rfReplaceAll]);
-              end;
+              sPeca := NormalizarEspacos(sPeca + ' ' + oChunks[iIndice02 + 1]);
+              // sPecaSemPonto := RemoverPontuacaoFinal(sPeca);
+              Inc(iIndice02); // consome o próximo
             end;
           end;
 
-          if (THlpString.RemoverQuebrasDeLinha(oTextoFala.Text).trim <> EmptyStr) then
+          if (sPecaSemPonto = '') then
           begin
-            for iIndice := 0 to Pred(oTextoFala.Count) do
-            begin
-              oVozTTS.input_text := oTextoFala[iIndice].trim;
-              oVozTTS.output     := '/dsv/TTS/out/' + ALivro.nome + '/partes/Pagina_' + oPagina.Numero.ToString + '_Trecho_' + oPersonagem.sequencialFala.ToString + '-' + iIndice.ToString + '.wav';
-              oArquivosSaida.Add('file ' + QuotedStr('S:\' + oVozTTS.output.Replace('/', '\').Replace('.wav', '.mp3')));
-              oVozTTS.ref_audio := oPersonagem.Voz.nome;
-              if (TRgnLeitorBookVozesHttp.Create.Ref.Gravar(oVozTTS)) then
-              begin
-                oPersonagem.processado := True;
-                oPersonagem.ArquivosAudio.Add('S:\' + oVozTTS.output.Replace('/', '\').Replace('.wav', '.mp3'));
-              end;
-            end;
+            Inc(iIndice02);
+            Continue;
+          end;
+
+          if (sPecaSemPonto.Length < CMaxLen) then
+          begin
+            EnviarChunk(sPecaSemPonto, oPagina.Numero, oPersonagem.sequencialFala, iChunk, oPersonagem.Voz.nome, ALivro.nome);
+            Inc(iChunk);
           end
           else
-            oPersonagem.processado := True;
+          begin
+            // frase longa sem pontos suficientes: quebra por tamanho
+            oPartesTemp.Clear;
+            DividirPorTamanho(sPecaSemPonto, CMaxLen - 1, oPartesTemp);
+            for iIndice03 := 0 to (oPartesTemp.Count - 1) do
+            begin
+              EnviarChunk(oPartesTemp[iIndice03], oPagina.Numero, oPersonagem.sequencialFala, iChunk, oPersonagem.Voz.nome, ALivro.nome);
+              Inc(iChunk);
+            end;
+          end;
+
+          Inc(iIndice02);
         end;
+
+        // marca o item inicial como processado
+        oPersonagem.processado := True;
+
+        Inc(iIndice01);
       end;
+
+      // Persistência por página
       oIDAOLeitorBook.SalvarFala(ALivro, oPagina);
     end;
-    oArquivosSaida.SaveToFile('S:\dsv\TTS\out\' + ALivro.nome + '\partes\lista.txt');
 
-    if (not(ALivro.HaPaginasPendentes)) then
+    // Finalização do livro
+    if (not ALivro.HaPaginasPendentes) then
     begin
-      Unificar(ALivro);
+      // Unificar(ALivro);
       ALivro.produzido := True;
       oIDAOLeitorBook.SalvarCabecalho(ALivro);
     end;
+
   finally
-    oVozTTS.Free;
-    oTextoFala.Free;
+    oPartesTemp.Free;
+    oChunks.Free;
+    oListaSentencas.Free;
     oArquivosSaida.Free;
+    oVozTTS.Free;
   end;
 end;
 
@@ -141,6 +387,7 @@ begin
     DefinirVozes(ALivro);
     Gravar(ALivro);
   end;
+  CriarTrilha(ALivro);
 end;
 
 
@@ -154,8 +401,9 @@ begin
     oComandoUnir.LoadFromFile('S:\dsv\TTS\out\unir.bat');
     oComandoUnir.Text := StringReplace(oComandoUnir.Text, 'lista.txt', 'S:\dsv\TTS\out\' + ALivro.nome + '\partes\lista.txt', [rfReplaceAll]);
     oComandoUnir.Text := StringReplace(oComandoUnir.Text, 'output.mp3', 'S:\dsv\TTS\out\' + ALivro.nome + '\Saida.mp3', [rfReplaceAll]);
-    oComandoUnir.SaveToFile('S:\dsv\TTS\out\unir.bat');
-    WinExec(PAnsiChar(AnsiString('cmd.exe /c "S:\dsv\TTS\out\unir.bat"')), SW_HIDE);
+    oComandoUnir.SaveToFile('S:\dsv\TTS\out\unir_bkp.bat');
+    WinExec(PAnsiChar(AnsiString('cmd.exe /c "S:\dsv\TTS\out\unir_bkp.bat"')), SW_HIDE);
+    DeleteFile('S:\dsv\TTS\out\unir_bkp.bat');
   finally
     oComandoUnir.Free;
   end;

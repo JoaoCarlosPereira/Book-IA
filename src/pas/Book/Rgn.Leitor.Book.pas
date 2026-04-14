@@ -52,10 +52,11 @@ end;
 procedure TRgnLeitorBook.ProcessarBook(const ALivroPDF: String);
 var
   oPaginas: TStringList;
-  sTexto: string;
-  iNumero: Integer;
+  sTexto, sAuxiliar: string;
+  iIndice, iNumero: Integer;
 begin
-  oLivro.Nome := ExtractFileName(ALivroPDF).Replace('.pdf', '').Replace(' ', '_');
+  oLivro.Nome   := ExtractFileName(ALivroPDF).Replace('.pdf', '');
+  oLivro.Titulo := ExtractFileName(ALivroPDF).Replace('.pdf', '');
   oIDAOLeitorBook.LocalizarCabecalho(oLivro);
 
   if (oLivro.lido) then
@@ -67,15 +68,25 @@ begin
   begin
     oLivro.Clear;
     Writeln('Lendo PDF...');
-    oPaginas := oIRgnLeitorPDF.LerPDFPorPagina(ALivroPDF);
-    iNumero  := 1;
-    for sTexto in oPaginas do
+    oPaginas    := oIRgnLeitorPDF.LerPDFPorPagina(ALivroPDF);
+    iNumero     := 1;
+    for iIndice := 0 to Pred(oPaginas.Count) do
     begin
-      if (THlpString.RemoverCaracteresEspeciaisNaoASCII(sTexto.Trim) <> EmptyStr) and (not(THlpString.SomenteNumeros(THlpString.RemoverCaracteresEspeciaisNaoASCII(sTexto.Trim)))) then
+
+      sTexto := THlpString.RemoverCaracteresEspeciaisNaoASCII(oPaginas[iIndice]);
+      if (sTexto.Trim <> EmptyStr) and (not(THlpString.SomenteNumeros(sTexto.Trim))) then
       begin
         oLivro.Add(TPagina.Create);
         oLivro.Last.Numero := iNumero;
-        oLivro.Last.Texto  := THlpString.RemoverCaracteresEspeciaisNaoASCII(sTexto.Trim);
+
+        if (sTexto.Trim[sTexto.Trim.Length] = '.') or (iIndice = Pred(oPaginas.Count)) then
+          oLivro.Last.Texto := sTexto.Trim
+        else
+        begin
+          sAuxiliar               := GetParam(THlpString.RemoverCaracteresEspeciaisNaoASCII(oPaginas[Succ(iIndice)]), 1, '.').Trim + '.';
+          oLivro.Last.Texto       := sTexto.Trim + ' ' + sAuxiliar;
+          oPaginas[Succ(iIndice)] := oPaginas[Succ(iIndice)].Replace(sAuxiliar, '');
+        end;
 
         inc(iNumero);
       end;
