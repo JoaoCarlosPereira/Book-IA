@@ -1,0 +1,6 @@
+# Book-IA — Dependências de produção
+
+-r base.txt
+
+# Servidor ASGI production-ready
+gunicorn>=23.0.0

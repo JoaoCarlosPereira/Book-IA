@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Book-IA{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css"
+    />
+    <link rel="stylesheet" href="/static/css/styles.css" />
+    <link rel="stylesheet" href="/static/css/responsive-fixes.css" />
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    {% block extra_head %}{% endblock %}
+    <style>
+      .glass-card {
+        background: rgba(7, 15, 28, 0.78);
+        backdrop-filter: blur(14px);
+        border: 1px solid rgba(124, 231, 255, 0.12);
+      }
+      .status-badge-pendente {
+        background: rgba(216, 231, 255, 0.25);
+        color: #d8e7ff;
+      }
+      .status-badge-processando {
+        background: rgba(52, 211, 255, 0.2);
+        color: #34d3ff;
+        border: 1px solid rgba(52, 211, 255, 0.35);
+      }
+      .status-badge-concluido {
+        background: rgba(25, 135, 84, 0.25);
+        color: #75d99a;
+      }
+      .status-badge-falhou {
+        background: rgba(220, 53, 69, 0.25);
+        color: #f5a0a8;
+      }
+      .status-badge-pausado {
+        background: rgba(255, 209, 102, 0.2);
+        color: #ffd166;
+        border: 1px solid rgba(255, 209, 102, 0.35);
+      }
+      .status-badge-cancelado {
+        background: rgba(108, 117, 125, 0.35);
+        color: #adb5bd;
+      }
+      #pacman-background {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0.45;
+      }
+      .page-content {
+        position: relative;
+        z-index: 1;
+      }
+    </style>
+  </head>
+  <body class="d-flex flex-column min-vh-100 pacman-tech-theme">
+    <canvas id="pacman-background" aria-hidden="true"></canvas>
+
+    <nav class="navbar navbar-expand-lg navbar-dark page-content">
+      <div class="container px-4 px-lg-5">
+        <a class="navbar-brand fw-bolder" href="/dashboard">
+          <span class="text-gradient">Book-IA</span>
+        </a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarMain"
+          aria-controls="navbarMain"
+          aria-expanded="false"
+          aria-label="Alternar navegação"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarMain">
+          <ul class="navbar-nav ms-auto mb-2 mb-lg-0 align-items-lg-center">
+            <li class="nav-item">
+              <a class="nav-link" href="/dashboard">
+                <i class="bi bi-grid me-1"></i> Fila
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/livros/upload">
+                <i class="bi bi-cloud-upload me-1"></i> Upload
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/configuracoes">
+                <i class="bi bi-gear me-1"></i> Configurações
+              </a>
+            </li>
+            {% if usuario is defined and usuario %}
+            <li class="nav-item ms-lg-2">
+              <span class="nav-link small text-muted">
+                <i class="bi bi-person-circle me-1"></i>{{ usuario.login }}
+              </span>
+            </li>
+            <li class="nav-item">
+              <form method="post" action="/api/v1/auth/logout" class="d-inline">
+                <button type="submit" class="btn btn-outline-dark btn-sm rounded-4">
+                  <i class="bi bi-box-arrow-right"></i> Sair
+                </button>
+              </form>
+            </li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <main class="flex-grow-1 page-content">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="py-4 mt-auto page-content">
+      <div class="container px-4 px-lg-5">
+        <div class="small text-center text-muted">
+          Book-IA — Conversão de livros em audiobook com IA
+        </div>
+      </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/scripts.js"></script>
+    {% block extra_scripts %}{% endblock %}
+  </body>
+</html>

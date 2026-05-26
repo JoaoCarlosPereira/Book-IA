@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bookia-postgres
+    environment:
+      POSTGRES_DB: bookia
+      POSTGRES_USER: bookia
+      POSTGRES_PASSWORD: bookia
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookia -d bookia"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: bookia-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bookia-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://bookia:bookia@postgres:5432/bookia
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      DATABASE_SYNC_URL: postgresql://bookia:bookia@postgres:5432/bookia
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+      - audio_data:/app/storage/audio
+      - pdfs_data:/app/storage/pdfs
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bookia-celery
+    command: celery -A celery_worker worker --loglevel=info --queues=bookia
+    environment:
+      DATABASE_URL: postgresql+asyncpg://bookia:bookia@postgres:5432/bookia
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      DATABASE_SYNC_URL: postgresql://bookia:bookia@postgres:5432/bookia
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+      - audio_data:/app/storage/audio
+      - pdfs_data:/app/storage/pdfs
+
+volumes:
+  postgres_data:
+  redis_data:
+  audio_data:
+  pdfs_data:

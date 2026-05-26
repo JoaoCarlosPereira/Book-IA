@@ -1,0 +1,44 @@
+# Book-IA — Dependências principais
+
+## Web Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+## Banco de Dados
+sqlalchemy>=2.0.36
+alembic>=1.14.0
+psycopg2-binary>=2.9.10
+asyncpg>=0.30.0
+
+## Validação e Configuração
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+
+## HTTP Client
+httpx>=0.28.0
+
+## Filas e Worker
+celery[redis]>=5.4.0
+redis>=5.2.0
+
+## Templates e Formulários
+jinja2>=3.1.4
+python-multipart>=0.0.18
+
+## Autenticação e Segurança
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0
+
+## Processamento de Documentos
+pymupdf>=1.24.0
+ebooklib>=0.18
+
+## Logs
+structlog>=24.4.0
+
+## Arquivos Assíncronos
+aiofiles>=24.1.0
+
+## Áudio
+ffmpy>=0.5.0

@@ -1,0 +1,19 @@
+# Book-IA — Dependências de desenvolvimento
+
+-r base.txt
+
+# Linting e formatação
+ruff>=0.8.0
+
+# Tipagem estática
+mypy>=1.13.0
+
+# Pré-commit hooks
+pre-commit>=4.0.0
+
+# Testes
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+pytest-cov>=6.0.0
+factory-boy>=3.3.0
+pytest-postgresql>=7.0.0

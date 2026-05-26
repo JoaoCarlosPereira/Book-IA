@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(grep -v '/\\\\$\\\\$')",
+      "Bash(grep -v '\\\\.dcu$')",
+      "Bash(grep -v '\\\\.exe$')",
+      "Bash(grep -v '\\\\.map$')",
+      "Bash(grep -v '\\\\.drc$')",
+      "Bash(grep -v '\\\\.stat$')",
+      "Bash(grep -v '\\\\.mes$')",
+      "Bash(grep -v '\\\\.identcache$')",
+      "Bash(grep -v '\\\\.dxsettings$')",
+      "Read(//d/dsv-git/dsv-delphi/shared/Padrao/DAO/**)",
+      "Read(//d/dsv-git/dsv-delphi/shared/Sistema/**)",
+      "Read(//d/dsv-git/dsv-delphi/shared/Enumerador/**)",
+      "Read(//d/dsv-git/dsv-delphi/sysmos1-modular/Financeiro/BoletoHibrido/src/**)"
+    ]
+  }
+}

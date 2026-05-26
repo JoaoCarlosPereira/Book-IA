@@ -1,0 +1,16 @@
+{% if livros %}
+<div class="row g-4">
+  {% for livro in livros %}
+  {% set icon = status_icon(livro.status) %}
+  {% include "partials/livro_card.html" %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 glass-card rounded-4">
+  <i class="bi bi-inbox display-4 text-muted mb-3 d-block"></i>
+  <p class="text-muted mb-3">Nenhum livro na fila ainda.</p>
+  <a href="/livros/upload" class="btn btn-primary btn-lg rounded-4">
+    <i class="bi bi-cloud-upload me-1"></i> Enviar primeiro livro
+  </a>
+</div>
+{% endif %}

@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}{{ livro.titulo }} — Book-IA{% endblock %}
+
+{% block content %}
+<section class="py-5">
+  <div class="container px-4 px-lg-5">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+      <div>
+        <a href="/dashboard" class="small text-muted text-decoration-none">
+          <i class="bi bi-arrow-left"></i> Voltar à fila
+        </a>
+        <h1 class="h3 fw-bold mt-2 mb-1">{{ livro.titulo }}</h1>
+        <p class="text-muted small mb-0">{{ livro.nome_arquivo }}</p>
+      </div>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        {% set badge_class = status_badge_class(livro.status) %}
+        {% set status = livro.status %}
+        {% include "partials/status_badge.html" %}
+        {% if livro.status in ['processando', 'pendente'] %}
+        <button
+          class="btn btn-outline-dark rounded-4"
+          hx-post="/api/v1/livros/{{ livro.id }}/pausar"
+          hx-target="body"
+          hx-on::after-request="window.location.reload()"
+        >
+          <i class="bi bi-pause-fill"></i> Pausar
+        </button>
+        {% elif livro.status == 'pausado' %}
+        <button
+          class="btn btn-outline-dark rounded-4"
+          hx-post="/api/v1/livros/{{ livro.id }}/retomar"
+          hx-target="body"
+          hx-on::after-request="window.location.reload()"
+        >
+          <i class="bi bi-play-fill"></i> Retomar
+        </button>
+        {% endif %}
+        {% if livro.status not in ['concluido', 'concluído', 'cancelado'] %}
+        <button
+          class="btn btn-outline-dark rounded-4"
+          hx-post="/api/v1/livros/{{ livro.id }}/cancelar"
+          hx-confirm="Cancelar processamento?"
+          hx-target="body"
+          hx-on::after-request="window.location.reload()"
+        >
+          <i class="bi bi-x-lg"></i> Cancelar
+        </button>
+        {% endif %}
+        {% if livro.status in ['concluido', 'concluído'] %}
+        <a
+          href="/api/v1/livros/{{ livro.id }}/download"
+          class="btn btn-primary rounded-4"
+        >
+          <i class="bi bi-download"></i> Download MP3
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <div
+      id="progresso-livro"
+      class="glass-card rounded-4 p-4 mb-4"
+      hx-get="/api/v1/livros/{{ livro.id }}/progresso"
+      hx-trigger="load, every 3s"
+      hx-swap="innerHTML"
+    >
+      {% set progresso = livro.progresso %}
+      {% set etapa = livro.etapa %}
+      {% include "partials/progresso.html" %}
+    </div>
+
+    <ul class="nav nav-pills mb-4 gap-2" id="livroTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link active rounded-4 bg-gradient-primary-to-secondary text-white"
+          id="tab-info"
+          data-bs-toggle="pill"
+          data-bs-target="#pane-info"
+          type="button"
+          role="tab"
+        >
+          Informações
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link rounded-4"
+          id="tab-personagens"
+          data-bs-toggle="pill"
+          data-bs-target="#pane-personagens"
+          type="button"
+          role="tab"
+        >
+          Personagens
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link rounded-4"
+          id="tab-audio"
+          data-bs-toggle="pill"
+          data-bs-target="#pane-audio"
+          type="button"
+          role="tab"
+        >
+          Áudio
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="pane-info" role="tabpanel">
+        <div class="glass-card rounded-4 p-4">
+          <dl class="row mb-0">
+            <dt class="col-sm-4 text-muted">Tipo</dt>
+            <dd class="col-sm-8">{{ livro.tipo_documento | upper }}</dd>
+            <dt class="col-sm-4 text-muted">Nível</dt>
+            <dd class="col-sm-8">{{ livro.nivel_producao }}</dd>
+            <dt class="col-sm-4 text-muted">Etapa</dt>
+            <dd class="col-sm-8">{{ livro.etapa or '—' }}</dd>
+            <dt class="col-sm-4 text-muted">Tarefa</dt>
+            <dd class="col-sm-8">{{ livro.task_status or '—' }}</dd>
+            {% if livro.prioridade is not none %}
+            <dt class="col-sm-4 text-muted">Prioridade</dt>
+            <dd class="col-sm-8">{{ livro.prioridade }}</dd>
+            {% endif %}
+            <dt class="col-sm-4 text-muted">Criado em</dt>
+            <dd class="col-sm-8">{{ livro.criado_em.strftime('%d/%m/%Y %H:%M') }}</dd>
+            {% if livro.erro %}
+            <dt class="col-sm-4 text-muted">Erro</dt>
+            <dd class="col-sm-8 text-danger">{{ livro.erro }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="pane-personagens" role="tabpanel">
+        <div class="row g-3">
+          {% if livro.personagens %}
+          {% for p in livro.personagens %}
+          <div class="col-md-6">
+            <div class="glass-card rounded-4 p-3 h-100">
+              <div class="d-flex align-items-center gap-3">
+                <div
+                  class="feature bg-primary bg-gradient-primary-to-secondary text-white rounded-3"
+                >
+                  <i class="bi bi-person{% if p.is_narrador %}-badge{% endif %}"></i>
+                </div>
+                <div>
+                  <h3 class="h6 fw-bold mb-0">{{ p.nome }}</h3>
+                  <p class="small text-muted mb-0">
+                    {% if p.is_narrador %}Narrador{% else %}{{ p.genero or '—' }} · {{ p.idade or '—' }}{% endif %}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+          {% else %}
+          <div class="col-12">
+            <p class="text-muted text-center py-4">
+              Personagens serão identificados durante o processamento.
+            </p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="pane-audio" role="tabpanel">
+        <div class="glass-card rounded-4 p-4">
+          {% if livro.status in ['concluido', 'concluído'] %}
+          <p class="mb-3">Audiobook pronto para download.</p>
+          <a
+            href="/api/v1/livros/{{ livro.id }}/download"
+            class="btn btn-primary rounded-4"
+          >
+            <i class="bi bi-download me-1"></i> Baixar MP3
+          </a>
+          {% else %}
+          <p class="text-muted mb-0">
+            <i class="bi bi-music-note-beamed me-1"></i>
+            O áudio será gerado após conclusão das etapas de análise e TTS.
+            Progresso atual: {{ livro.progresso }}%.
+          </p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

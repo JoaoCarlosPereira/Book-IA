@@ -1,0 +1,11 @@
+{% if conectado %}
+<span class="badge status-badge-concluido rounded-pill mt-2">
+  <i class="bi bi-check-circle me-1"></i>
+  Conectado{% if latencia_ms %} — {{ latencia_ms }} ms{% endif %}
+</span>
+{% else %}
+<span class="badge status-badge-falhou rounded-pill mt-2">
+  <i class="bi bi-x-circle me-1"></i>
+  Falhou{% if erro %}: {{ erro }}{% endif %}
+</span>
+{% endif %}

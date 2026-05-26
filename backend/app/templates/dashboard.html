@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Book-IA{% endblock %}
+
+{% block content %}
+<section class="py-5">
+  <div class="container px-4 px-lg-5">
+    <div class="text-center mb-5">
+      <h1 class="display-5 fw-bolder mb-2">
+        <span class="text-gradient d-inline">Book-IA</span>
+      </h1>
+      <p class="lead text-muted">
+        Fila de processamento — audiobooks com vozes distintas e trilha sonora por IA
+      </p>
+      <a href="/livros/upload" class="btn btn-primary btn-lg rounded-4 mt-2">
+        <i class="bi bi-cloud-upload me-1"></i> Novo upload
+      </a>
+    </div>
+
+    <div
+      id="livro-list"
+      hx-get="/api/v1/livros"
+      hx-trigger="load, every 3s"
+      hx-swap="innerHTML"
+    >
+      {% include "partials/livro_list.html" %}
+    </div>
+  </div>
+</section>
+{% endblock %}
