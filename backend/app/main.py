@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1 import auth, configuracoes, livros, tarefas
+from app.api.v1 import auth, capitulos, configuracoes, livros, tarefas, revisao
 from app.config import settings
 from app.middlewares.session import SessionAuthMiddleware
 from app.routers import pages
@@ -54,6 +54,8 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(configuracoes.router, prefix="/api/v1")
 app.include_router(tarefas.router, prefix="/api/v1")
 app.include_router(tarefas.health_router)
+app.include_router(revisao.router, prefix="/api/v1")
+app.include_router(capitulos.router, prefix="/api/v1")
 app.include_router(pages.router)
 
 

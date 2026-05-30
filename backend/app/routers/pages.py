@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, require_auth
@@ -63,6 +64,50 @@ async def livro_detail_page(
         request=request,
         name="livro/detail.html",
         context={"request": request, "usuario": usuario, "livro": livro},
+    )
+
+
+@router.get("/livros/{livro_id}/revisao", response_class=HTMLResponse)
+async def livro_revisao_page(
+    request: Request,
+    livro_id: int,
+    usuario: Annotated[Usuario, Depends(require_auth)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> HTMLResponse:
+    """Book character review page (Fase 2)."""
+    from app.models.personagem import Personagem
+    from app.models.voz import Voz
+
+    livro_result = await db.execute(
+        select(Livro).where(Livro.id == livro_id, Livro.usuario_id == usuario.id)
+    )
+    livro = livro_result.scalar_one_or_none()
+    if livro is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Livro nao encontrado",
+        )
+
+    personagens = (
+        await db.execute(
+            select(Personagem).where(Personagem.livro_id == livro_id)
+        )
+    ).scalars().all()
+
+    vozes = (
+        await db.execute(select(Voz))
+    ).scalars().all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="livro/review.html",
+        context={
+            "request": request,
+            "usuario": usuario,
+            "livro": livro,
+            "personagens": personagens,
+            "vozes": vozes,
+        },
     )
 
 

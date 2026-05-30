@@ -31,8 +31,17 @@ class Page(BaseModel):
     texto: str
 
 
+class ChapterInfo(BaseModel):
+    """Chapter with its page range for export-by-chapter."""
+    numero: int
+    titulo: str
+    pagina_inicio: int
+    pagina_fim: int
+
+
 class PageExtractionResult(BaseModel):
     chapters: list[str] = Field(default_factory=list)
+    chapter_pages: list[ChapterInfo] = Field(default_factory=list)
     pages: list[Page] = Field(default_factory=list)
 
 
@@ -140,7 +149,7 @@ class PDFProcessor:
             raise CorruptedFileError(str(path), str(exc)) from exc
 
         try:
-            chapters = self._pdf_chapter_titles(doc)
+            toc = self._pdf_toc(doc)
             pages: list[Page] = []
             for index in range(doc.page_count):
                 page = doc[index]
@@ -148,20 +157,69 @@ class PDFProcessor:
                 cleaned = self._limpar_texto(raw_text)
                 if cleaned:
                     pages.append(Page(numero=index + 1, texto=cleaned))
-            return PageExtractionResult(chapters=chapters, pages=pages)
+
+            chapter_pages = self._map_chapters_to_pages(toc, pages)
+            chapters = [c.titulo for c in chapter_pages]
+
+            return PageExtractionResult(
+                chapters=chapters,
+                chapter_pages=chapter_pages,
+                pages=pages,
+            )
         finally:
             if doc is not None:
                 doc.close()
 
-    def _pdf_chapter_titles(self, doc: fitz.Document) -> list[str]:
-        titles: list[str] = []
+    def _pdf_toc(self, doc: fitz.Document) -> list[tuple]:
+        """Return doc.get_toc() with page numbers (1-indexed)."""
         try:
-            for entry in doc.get_toc() or []:
-                if len(entry) >= 2 and entry[1]:
-                    titles.append(str(entry[1]).strip())
-        except Exception:  # noqa: BLE001 — TOC is optional
+            toc = doc.get_toc() or []
+        except Exception:  # noqa: BLE001
             return []
-        return [title for title in titles if title]
+        enriched: list[tuple] = []
+        for entry in toc:
+            if len(entry) >= 3:
+                # [level, title, [page_number, ...]]
+                page_num = int(entry[2][0]) if entry[2] else 0
+                enriched.append((entry[0], entry[1], page_num))
+            elif len(entry) == 2 and entry[1]:
+                enriched.append((entry[0], entry[1], 0))
+        return enriched
+
+    @staticmethod
+    def _map_chapters_to_pages(
+        toc: list[tuple], pages: list[Page]
+    ) -> list[ChapterInfo]:
+        """Map TOC entries to page ranges based on page numbers."""
+        if not toc:
+            return []
+
+        total_pages = len(pages)
+        if total_pages == 0:
+            return []
+
+        result: list[ChapterInfo] = []
+        for idx, entry in enumerate(toc):
+            if len(entry) >= 3 and entry[2] and entry[1]:
+                start = max(1, int(entry[2])) - 1  # 0-indexed
+                if start >= total_pages:
+                    continue
+                if idx + 1 < len(toc):
+                    next_entry = toc[idx + 1]
+                    if len(next_entry) >= 3 and next_entry[2] and next_entry[2]:
+                        end = max(start + 1, int(next_entry[2]) - 1)
+                    else:
+                        end = total_pages - 1
+                else:
+                    end = total_pages - 1
+                end = min(end, total_pages - 1)
+                result.append(ChapterInfo(
+                    numero=len(result) + 1,
+                    titulo=str(entry[1]).strip(),
+                    pagina_inicio=start + 1,
+                    pagina_fim=end + 1,
+                ))
+        return result
 
     def _extrair_epub(self, path: Path) -> PageExtractionResult:
         try:

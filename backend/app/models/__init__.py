@@ -7,6 +7,7 @@ from app.models.api_config import ApiConfig  # noqa: F401
 from app.models.arquivo import Arquivo  # noqa: F401
 from app.models.book_review import BookReview  # noqa: F401
 from app.models.book_task import BookTask  # noqa: F401
+from app.models.capitulo import Capitulo  # noqa: F401
 from app.models.falas import Fala  # noqa: F401
 from app.models.livro import Livro  # noqa: F401
 from app.models.pagina import Pagina  # noqa: F401
@@ -20,6 +21,7 @@ __all__ = [
     "Arquivo",
     "BookReview",
     "BookTask",
+    "Capitulo",
     "Fala",
     "Livro",
     "Pagina",

@@ -16,6 +16,7 @@ from app.db import SessionLocal
 from app.models.api_config import ApiConfig
 from app.models.arquivo import Arquivo
 from app.models.book_task import BookTask
+from app.models.capitulo import Capitulo
 from app.models.falas import Fala
 from app.models.livro import Livro
 from app.models.pagina import Pagina
@@ -36,6 +37,7 @@ _GENDER_TOKENS = frozenset(
 )
 _NIVEIS_COM_TRILHA = frozenset({"avancado", "profissional"})
 
+STAGE_CAPITULOS = "CHAPTER_DIVISION"
 STAGE_PDF = "PDF_PROCESSING"
 STAGE_IA = "IA_ANALYSIS"
 STAGE_VOZ = "VOICE_ASSIGNMENT"
@@ -44,6 +46,7 @@ STAGE_MUSIC = "MUSICGEN"
 STAGE_UNIFICAR = "UNIFICAR"
 
 PROGRESS_AFTER = {
+    STAGE_CAPITULOS: 10,
     STAGE_PDF: 10,
     STAGE_IA: 40,
     STAGE_VOZ: 50,
@@ -196,6 +199,7 @@ class BookPipeline:
                 self._stage_voice_assignment,
                 self._stage_audio_production,
                 self._stage_musicgen,
+                self._stage_dividir_capitulos,
                 self._stage_unificar,
             )
             for stage_fn in stages:
@@ -544,6 +548,168 @@ class BookPipeline:
         self._trilha_paths = _run_async(gerar_trilhas())
         self._update_task(progresso=PROGRESS_AFTER[STAGE_MUSIC], etapa_atual=STAGE_MUSIC)
 
+
+
+    def _dividir_capitulos(self):
+        """Divide the book into chapters based on chapter header detection."""
+        from sqlalchemy import select as _sa_select
+
+        stmt = (
+            _sa_select(Pagina)
+            .where(Pagina.livro_id == self.livro_id)
+            .order_by(Pagina.numero)
+        )
+        pages_result = self.db.execute(stmt).scalars().all()
+
+        if not pages_result:
+            cap = Capitulo(
+                livro_id=self.livro_id,
+                numero=1,
+                titulo=self.livro.titulo or "Capítulo \xc3\x9anico",
+                pagina_inicio=0,
+                pagina_fim=0,
+            )
+            self.db.add(cap)
+            self.db.commit()
+            return [cap]
+
+        # Regex: matches Capítulo 1, CAPÍTULO 2:, Chapter 3, etc.
+        pat = re.compile(
+            r'(?:CAP[\u00cd\u0049]TULO|Cap[\u00cd\u0049]tulo|Chapter)\s*(\d+)\s*[.:]?\s*(.+?)\s*$'
+            , re.IGNORECASE | re.MULTILINE
+        )
+
+        chapters = []
+        current_cap_start = None
+        current_cap_num = None
+        current_cap_title = None
+
+        for page in pages_result:
+            if not page.texto or len(page.texto.strip()) < 50:
+                continue
+
+            match = pat.search(page.texto[:500])
+            if match:
+                if current_cap_start is not None and current_cap_num is not None:
+                    chapters.append(Capitulo(
+                        livro_id=self.livro_id,
+                        numero=current_cap_num,
+                        titulo=current_cap_title,
+                        pagina_inicio=current_cap_start,
+                        pagina_fim=page.numero - 1,
+                    ))
+                current_cap_num = int(match.group(1))
+                current_cap_title = "Capítulo %d - %s" % (int(match.group(1)), match.group(2).strip())
+                current_cap_start = page.numero
+            elif current_cap_start is None and current_cap_num is None:
+                current_cap_start = page.numero
+                txt = page.texto[:80].replace("\n", " ").strip() or "Introdução"
+                current_cap_title = "Capítulo 1 - " + txt
+
+        if current_cap_start is not None:
+            chapters.append(Capitulo(
+                livro_id=self.livro_id,
+                numero=current_cap_num or 1,
+                titulo=current_cap_title or "Capítulo 1",
+                pagina_inicio=current_cap_start,
+                pagina_fim=pages_result[-1].numero if pages_result else 0,
+            ))
+
+        if not chapters:
+            chapters.append(Capitulo(
+                livro_id=self.livro_id,
+                numero=1,
+                titulo=self.livro.titulo or "Livro Inteiro",
+                pagina_inicio=pages_result[0].numero,
+                pagina_fim=pages_result[-1].numero if pages_result else 0,
+            ))
+
+        for i, cap in enumerate(chapters):
+            cap.numero = i + 1
+            cap.titulo = cap.titulo or "Capítulo %d" % cap.numero
+
+        self.db.query(Capitulo).filter(Capitulo.livro_id == self.livro_id).delete()
+        for cap in chapters:
+            self.db.add(cap)
+        self.db.commit()
+
+        return chapters
+
+
+
+    def _stage_dividir_capitulos(self):
+        """Stage: divide book into chapters."""
+        self._update_task(
+            etapa_atual=STAGE_CAPITULOS,
+            progresso=PROGRESS_AFTER.get(STAGE_CAPITULOS, 10),
+        )
+        self._dividir_capitulos()
+        self._update_task(
+            progresso=PROGRESS_AFTER[STAGE_CAPITULOS],
+            etapa_atual=STAGE_CAPITULOS,
+        )
+
+    def _stage_exportar_capitulo(self, chapters, tts, nome_seguro, saida_dir):
+        """Export each chapter as a separate MP3 file."""
+        from sqlalchemy import select as _sa_select
+
+        # Get all Fala with page numbers and their audio paths
+        stmt = (
+            _sa_select(Fala, Pagina.numero.label("pag_num"))
+            .join(Pagina, Fala.pagina_id == Pagina.id, isouter=True)
+            .where(Fala.livro_id == self.livro_id, Fala.processado.is_(True))
+            .order_by(Pagina.numero, Fala.id)
+        )
+        fala_rows = self.db.execute(stmt).all()
+
+        # Group audio by page number
+        fala_by_page = {}
+        for row in fala_rows:
+            fala = row[0]
+            pag_num = row[1] if row[1] else 0
+            if fala.arquivo_id is not None:
+                arquivo = self.db.get(Arquivo, fala.arquivo_id)
+                if arquivo and arquivo.caminho:
+                    fpath = Path(arquivo.caminho)
+                    if fpath.exists():
+                        fala_by_page.setdefault(pag_num, []).append(fpath)
+
+        for cap in chapters:
+            start = cap.pagina_inicio or 0
+            end = cap.pagina_fim or 999999
+
+            chapter_files = []
+            for pag_num, files in sorted(fala_by_page.items()):
+                if start <= pag_num <= end:
+                    chapter_files.extend(files)
+
+            if not chapter_files:
+                cap.caminho_audio = None
+                cap.duracao_estimada = 0
+                self.db.commit()
+                continue
+
+            cap_dir = saida_dir
+            cap_dir.mkdir(parents=True, exist_ok=True)
+            cap_path = cap_dir / (nome_seguro + "_capitulo_" + str(cap.numero) + ".mp3")
+
+            try:
+                tts._unificar_arquivos(chapter_files, cap_path)
+                cap.caminho_audio = str(cap_path.resolve())
+                cap.duracao_estimada = int(cap_path.stat().st_size / 1000) if cap_path.exists() else 0
+                self.db.add(Arquivo(
+                    livro_id=self.livro_id,
+                    tipo="capitulo",
+                    caminho=str(cap_path.resolve()),
+                    tamanho_bytes=cap_path.stat().st_size if cap_path.exists() else None,
+                ))
+                self.db.commit()
+                logger.info("Capítulo %d exportado: %s", cap.numero, cap_path)
+            except Exception as exc:
+                logger.error("Erro ao exportar capítulo %d: %s", cap.numero, exc)
+                cap.caminho_audio = None
+                self.db.commit()
+
     def _stage_unificar(self) -> None:
         self._update_task(
             etapa_atual=STAGE_UNIFICAR,
@@ -574,6 +740,20 @@ class BookPipeline:
             )
         )
         self._update_task(progresso=PROGRESS_AFTER[STAGE_UNIFICAR], etapa_atual=STAGE_UNIFICAR)
+
+        # Export chapters
+        try:
+            from sqlalchemy import select as _sa_select
+            stmt = (
+                _sa_select(Capitulo)
+                .where(Capitulo.livro_id == self.livro_id)
+                .order_by(Capitulo.numero)
+            )
+            chapters = self.db.execute(stmt).scalars().all()
+            if chapters:
+                self._stage_exportar_capitulo(chapters, tts, nome_seguro, saida_dir)
+        except Exception as exc:
+            logger.warning("Falha na exportação por capítulo: %s", exc)
 
 
 def run_process_book(livro_id: int, work_dir: Path) -> str:

@@ -141,9 +141,22 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["usuario_id"], ["usuario.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.create_table(
+        "capitulo",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("livro_id", sa.Integer(), nullable=False),
+        sa.Column("numero", sa.Integer(), nullable=False),
+        sa.Column("titulo", sa.String(length=500), nullable=False),
+        sa.Column("pagina_inicio", sa.Integer(), nullable=True),
+        sa.Column("pagina_fim", sa.Integer(), nullable=True),
+        sa.Column("criado_em", sa.TIMESTAMP(timezone=True), server_default=sa.text("now()"), nullable=True),
+        sa.ForeignKeyConstraint(["livro_id"], ["livro.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_table("capitulo")
     op.drop_table("book_review")
     op.drop_table("falas")
     op.drop_table("book_task")

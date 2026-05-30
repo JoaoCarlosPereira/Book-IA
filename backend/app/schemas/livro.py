@@ -70,6 +70,7 @@ class LivroDetalheResponse(BaseModel):
     criado_em: datetime
     atualizado_em: datetime
     personagens: list[PersonagemResumo] = Field(default_factory=list)
+    capitulos: list[dict] = Field(default_factory=list)
 
 
 class LivroProgresso(BaseModel):

@@ -1,0 +1,31 @@
+<div id="capitulo-list">
+  {% if capitulos %}
+  <ul class="list-group list-group-flush">
+    {% for cap in capitulos %}
+    <li class="list-group-item bg-transparent border-0 py-2">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <strong>Capítulo {{ cap.numero }}</strong>
+          <span class="text-muted small ms-1">{{ cap.titulo }}</span>
+        </div>
+        {% if cap.caminho_audio %}
+        <a
+          href="/api/v1/livros/{{ livro_id }}/capitulos/{{ cap.id }}/download"
+          class="btn btn-sm btn-outline-primary rounded-4"
+        >
+          <i class="bi bi-download me-1"></i> Baixar
+        </a>
+        {% else %}
+        <span class="badge bg-secondary rounded-4">Pendente</span>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-muted small mb-0">
+    <i class="bi bi-hourglass-split me-1"></i>
+    Capítulos serão gerados após a producao de audio.
+  </p>
+  {% endif %}
+</div>

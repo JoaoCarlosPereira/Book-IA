@@ -14,6 +14,7 @@ from app.config import settings
 from app.models.book_task import BookTask
 from app.models.livro import Livro
 from app.models.personagem import Personagem
+from app.models.capitulo import Capitulo
 from app.models.usuario import Usuario
 from app.schemas.livro import (
     EXTENSION_TO_DOC_TYPE,
@@ -81,6 +82,12 @@ class LivroService:
                 detail="Livro não encontrado",
             )
         return livro
+
+    async def _get_chapters(self, livro_id: int) -> list:
+        result = await self._db.execute(
+            select(Capitulo).where(Capitulo.livro_id == livro_id).order_by(Capitulo.numero)
+        )
+        return result.scalars().all()
 
     async def _get_book_task(self, livro_id: int) -> BookTask | None:
         result = await self._db.execute(
@@ -231,6 +238,7 @@ class LivroService:
             select(Personagem).where(Personagem.livro_id == livro_id)
         )
         personagens = pers_result.scalars().all()
+        chapters = await self._get_chapters(livro_id)
         task = await self._get_book_task(livro_id)
 
         etapa = task.etapa_atual if task else None
@@ -252,6 +260,7 @@ class LivroService:
             criado_em=livro.criado_em,
             atualizado_em=livro.atualizado_em,
             personagens=[PersonagemResumo.model_validate(p) for p in personagens],
+            capitulos=[{"id": c.id, "numero": c.numero, "titulo": c.titulo, "pagina_inicio": c.pagina_inicio, "pagina_fim": c.pagina_fim, "caminho_audio": c.caminho_audio} for c in chapters],
         )
 
     async def obter_progresso(
