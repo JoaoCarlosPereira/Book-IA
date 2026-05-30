@@ -56,12 +56,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: bookia-celery
-    command: celery -A celery_worker worker --loglevel=info --queues=bookia
+    working_dir: /app/backend
     environment:
       DATABASE_URL: postgresql+asyncpg://bookia:bookia@postgres:5432/bookia
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       DATABASE_SYNC_URL: postgresql://bookia:bookia@postgres:5432/bookia
+      PYTHONPATH: /app/backend
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,6 +72,7 @@ services:
       - ./backend:/app/backend
       - audio_data:/app/storage/audio
       - pdfs_data:/app/storage/pdfs
+    command: celery -A celery_worker worker --loglevel=info --queues=bookia
 
 volumes:
   postgres_data:
