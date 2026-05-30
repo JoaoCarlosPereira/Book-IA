@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Revisao de Personagens — {{ livro.titulo }} — Book-IA{% endblock %}
+
+{% block content %}
+<section class="py-5">
+  <div class="container px-4 px-lg-5">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+      <div>
+        <a href="/dashboard" class="small text-muted text-decoration-none">
+          <i class="bi bi-arrow-left"></i> Voltar à fila
+        </a>
+        <h1 class="h3 fw-bold mt-2 mb-1">{{ livro.titulo }}</h1>
+        <p class="text-muted small mb-0">Revisao de personagens e distribuicao de vozes</p>
+      </div>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        {% if livro.status == 'em_analise' %}
+        <button
+          id="btn-aprovar"
+          class="btn btn-primary rounded-4"
+          hx-post="/api/v1/livros/{{ livro.id }}/revisao/aprovar"
+          hx-confirm="Aprovar personagens e iniciar producao de audio?"
+          hx-target="#review-section"
+          hx-swap="innerHTML"
+        >
+          <i class="bi bi-check-circle me-1"></i> Aprovar e Produzir
+        </button>
+        {% endif %}
+      </div>
+    </div>
+
+    <div id="review-section">
+      <div class="glass-card rounded-4 p-4 mb-4">
+        <h2 class="h5 fw-bold mb-3">Personagens Identificados</h2>
+        <p class="text-muted mb-3">
+          Revise os personagens identificados pela IA. Voce pode alterar nome, genero, faixa etaria e voz atribuida.
+          As falas de cada personagem sao exibidas para validar o perfil.
+        </p>
+
+        <div id="personagem-list">
+          {% if personagens %}
+          {% for p in personagens %}
+          <div class="glass-card rounded-4 p-3 mb-3 personagem-card" id="personagem-card-{{ p.id }}">
+            <div class="d-flex align-items-center gap-3 mb-2">
+              <div class="feature bg-primary bg-gradient-primary-to-secondary text-white rounded-3">
+                <i class="bi bi-person{% if p.is_narrador %}-badge{% endif %}"></i>
+              </div>
+              <div class="flex-grow-1">
+                <h3 class="h6 fw-bold mb-0">{{ p.nome }}</h3>
+                <p class="small text-muted mb-0">
+                  {% if p.is_narrador %}
+                    Narrador
+                  {% else %}
+                    {{ p.genero or '—' }} · {{ p.idade or '—' }}
+                  {% endif %}
+                </p>
+              </div>
+              {% if not p.is_narrador %}
+              <button
+                class="btn btn-sm btn-outline-dark rounded-4"
+                data-bs-toggle="modal"
+                data-bs-target="#modal-edit-{{ p.id }}"
+              >
+                <i class="bi bi-pencil"></i> Editar
+              </button>
+              {% endif %}
+            </div>
+
+            {% if p.falas %}
+            <div class="mt-2">
+              <button
+                class="btn btn-sm btn-link text-decoration-none p-0"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#falas-collapse-{{ p.id }}"
+              >
+                <i class="bi bi-chat-dots"></i> {{ p.falas|length }} falas
+              </button>
+              <div class="collapse mt-2" id="falas-collapse-{{ p.id }}">
+                <div class="small bg-dark bg-opacity-25 rounded-3 p-3">
+                  {% for fala in p.falas[:5] %}
+                  <p class="mb-1 text-muted small">
+                    <strong>P. {{ fala.pagina_numero }}:</strong> {{ fala.texto[:200] }}
+                    {% if fala.texto|length > 200 %}...{% endif %}
+                  </p>
+                  {% endfor %}
+                  {% if p.falas|length > 5 %}
+                  <p class="text-muted small mb-0">... e {{ p.falas|length - 5 }} falas adicionais</p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Edit modal -->
+          {% if not p.is_narrador %}
+          <div class="modal fade" id="modal-edit-{{ p.id }}" tabindex="-1">
+            <div class="modal-dialog">
+              <div class="modal-content rounded-4 glass-card border-0">
+                <div class="modal-header border-0">
+                  <h5 class="modal-title h6">Editar {{ p.nome }}</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <form
+                    hx-put="/api/v1/livros/{{ livro.id }}/revisao/personagem/{{ p.id }}"
+                    hx-encoding="application/json"
+                    hx-target="#personagem-card-{{ p.id }}"
+                    hx-swap="outerHTML"
+                    hx-on::after-request="
+                      var m = this.closest('.modal');
+                      if (m) { var b = m.querySelector('[data-bs-dismiss=modal]'); if (b) b.click(); }
+                    "
+                  >
+                    <div class="mb-3">
+                      <label class="form-label small">Nome</label>
+                      <input type="text" name="nome" value="{{ p.nome }}" class="form-control rounded-4" required />
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label small">Genero</label>
+                      <select name="genero" class="form-select rounded-4">
+                        <option value="masculino" {% if p.genero == 'masculino' %}selected{% endif %}>Masculino</option>
+                        <option value="feminino" {% if p.genero == 'feminino' %}selected{% endif %}>Feminino</option>
+                        <option value="neutro" {% if p.genero == 'neutro' %}selected{% endif %}>Neutro</option>
+                      </select>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label small">Faixa etaria</label>
+                      <select name="idade" class="form-select rounded-4">
+                        <option value="crianca" {% if p.idade == 'crianca' %}selected{% endif %}>Crianca</option>
+                        <option value="adulto" {% if p.idade == 'adulto' %}selected{% endif %}>Adulto</option>
+                        <option value="idoso" {% if p.idade == 'idoso' %}selected{% endif %}>Idoso</option>
+                      </select>
+                    </div>
+                    {% if vozes %}
+                    <div class="mb-3">
+                      <label class="form-label small">Voz atribuida</label>
+                      <select name="voz_id" class="form-select rounded-4">
+                        <option value="">-- Auto --</option>
+                        {% for v in vozes %}
+                        <option value="{{ v.id }}" {% if p.voz_id == v.id %}selected{% endif %}>{{ v.nome }} ({{ v.genero }}/{{ v.idade }})</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    {% endif %}
+                    <div class="d-grid">
+                      <button type="submit" class="btn btn-primary rounded-4">Salvar</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+          {% else %}
+          <div class="col-12">
+            <p class="text-muted text-center py-4">
+              Nenhum personagem identificado ainda.
+            </p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

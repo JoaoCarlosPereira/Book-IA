@@ -17,6 +17,14 @@
         {% set badge_class = status_badge_class(livro.status) %}
         {% set status = livro.status %}
         {% include "partials/status_badge.html" %}
+        {% if livro.status == 'em_analise' %}
+        <a
+          href="/livros/{{ livro.id }}/revisao"
+          class="btn btn-primary rounded-4"
+        >
+          <i class="bi bi-person-check me-1"></i> Revisao de Personagens
+        </a>
+        {% endif %}
         {% if livro.status in ['processando', 'pendente'] %}
         <button
           class="btn btn-outline-dark rounded-4"
@@ -137,6 +145,19 @@
 
       <div class="tab-pane fade" id="pane-personagens" role="tabpanel">
         <div class="row g-3">
+          {% if livro.status == 'em_analise' %}
+          <div class="col-12">
+            <div class="glass-card rounded-4 p-3 mb-3">
+              <p class="mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                Personagens identificados pela IA. Revise e ajuste antes da producao de audio.
+                <a href="/livros/{{ livro.id }}/revisao" class="fw-bold">
+                  <i class="bi bi-arrow-right"></i> Ir para revisao
+                </a>
+              </p>
+            </div>
+          </div>
+          {% endif %}
           {% if livro.personagens %}
           {% for p in livro.personagens %}
           <div class="col-md-6">
@@ -160,7 +181,7 @@
           {% else %}
           <div class="col-12">
             <p class="text-muted text-center py-4">
-              Personagens serão identificados durante o processamento.
+              Personagens serao identificados durante o processamento.
             </p>
           </div>
           {% endif %}

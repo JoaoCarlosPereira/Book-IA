@@ -1,0 +1,52 @@
+<div class="glass-card rounded-4 p-3 mb-3 personagem-card" id="personagem-card-{{ p.id }}">
+    <div class="d-flex align-items-center gap-3 mb-2">
+      <div class="feature bg-primary bg-gradient-primary-to-secondary text-white rounded-3">
+        <i class="bi bi-person{% if p.is_narrador %}-badge{% endif %}"></i>
+      </div>
+      <div class="flex-grow-1">
+        <h3 class="h6 fw-bold mb-0">{{ p.nome }}</h3>
+        <p class="small text-muted mb-0">
+          {% if p.is_narrador %}
+            Narrador
+          {% else %}
+            {{ p.genero or '—' }} · {{ p.idade or '—' }}
+          {% endif %}
+        </p>
+      </div>
+      {% if not p.is_narrador %}
+      <button
+        class="btn btn-sm btn-outline-dark rounded-4"
+        data-bs-toggle="modal"
+        data-bs-target="#modal-edit-{{ p.id }}"
+      >
+        <i class="bi bi-pencil"></i> Editar
+      </button>
+      {% endif %}
+    </div>
+
+    {% if p.falas %}
+    <div class="mt-2">
+      <button
+        class="btn btn-sm btn-link text-decoration-none p-0"
+        type="button"
+        data-bs-toggle="collapse"
+        data-bs-target="#falas-collapse-{{ p.id }}"
+      >
+        <i class="bi bi-chat-dots"></i> {{ p.falas|length }} falas
+      </button>
+      <div class="collapse mt-2" id="falas-collapse-{{ p.id }}">
+        <div class="small bg-dark bg-opacity-25 rounded-3 p-3">
+          {% for fala in p.falas[:5] %}
+          <p class="mb-1 text-muted small">
+            <strong>P. {{ fala.pagina_numero }}:</strong> {{ fala.texto[:200] }}
+            {% if fala.texto|length > 200 %}...{% endif %}
+          </p>
+          {% endfor %}
+          {% if p.falas|length > 5 %}
+          <p class="text-muted small mb-0">... e {{ p.falas|length - 5 }} falas adicionais</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>

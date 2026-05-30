@@ -48,3 +48,4 @@ def render_upload_success(
         name="partials/upload_success.html",
         context={"request": request, "livro_id": livro_id, "status": status},
     )
+
